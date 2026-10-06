@@ -2,6 +2,7 @@
 wrf/geog/
 wrf/out/
 wrf/.env
+wrf/docker/src/
 
 # macOS
 .DS_Store
