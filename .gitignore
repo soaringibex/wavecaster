@@ -1,0 +1,7 @@
+# WRF pipeline — large or secret, never committed
+wrf/geog/
+wrf/out/
+wrf/.env
+
+# macOS
+.DS_Store
