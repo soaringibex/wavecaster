@@ -93,7 +93,12 @@ RUN set -o pipefail \
 
 # -------------------------------------------------- convert_geotiff (pinned)
 COPY src/convert_geotiff /opt/convert_geotiff
+# The 2014-era generated build files look stale to a fresh clone (make wants
+# aclocal-1.14 to regenerate aclocal.m4); pin their timestamps instead of
+# installing a decade-old automake.
 RUN cd /opt/convert_geotiff \
+ && touch -d "2020-01-01" configure.ac Makefile.am \
+ && touch -d "2021-01-01" aclocal.m4 configure Makefile.in config.h.in \
  && ./configure \
  && make -j 8 \
  && test -x convert_geotiff
