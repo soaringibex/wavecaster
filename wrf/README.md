@@ -26,8 +26,15 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
 - **WPS aarch64**: WPS 4.6.0 ships no aarch64 entry; its x86_64 gfortran entry
   carries no x86-only flags, so the `#ARCH` line is patched in the image.
 - **Compiler flags**: `-fallow-argument-mismatch -fallow-invalid-boz` appended to
-  WRF's `FCBASEOPTS_NO_G`; `-fallow-argument-mismatch` to WPS's `FFLAGS`/`F77FLAGS`
-  (GNU 13 on arm64).
+  WRF's `FCBASEOPTS_NO_G` (GNU 13 on arm64; WRF 4.6.1 already carries them via
+  `FCCOMPAT`, so duplicates are harmless); `-fallow-argument-mismatch` appended
+  to WPS's `FFLAGS`/`F77FLAGS`.
+- **WPS netCDF-Fortran link**: WPS's configure probes for
+  `$NETCDF/lib/libnetcdff.a` and misses Ubuntu's multiarch path, so the
+  gfortran entry never gets `-lnetcdff` and metgrid cannot resolve the `nf_*`
+  symbols in WRF's `libwrfio_nf.a`. The image appends `-lnetcdff` to the
+  `configure.wps` link line. (Same root cause makes the optional util targets
+  unbuildable as shipped — this pipeline does not build them.)
 - **wrf-python** comes from conda-forge (linux-aarch64, 1.4.2): its pip sdist
   does not build on Python 3.12 (`numpy.distutils` was removed). Same API
   (`destagger`, `to_np`, `interplevel`).

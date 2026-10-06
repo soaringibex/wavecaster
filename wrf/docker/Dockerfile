@@ -76,8 +76,8 @@ RUN echo "ca7bbfc6c28a107c6eb00ded70e693f5c9a3926ecde7656f49e306c9eb9a309b  /tmp
 # WPS 4.6.0 ships no aarch64 entry; its x86_64 gfortran entry carries no
 # x86-only flags, so the ARCH line is patched to also match aarch64.
 # Serial + GRIB2 = menu option 1. `./compile wps` builds exactly
-# geogrid+ungrib+metgrid; the util targets (int2nc et al., not used by this
-# pipeline) fail to link as shipped and are skipped on purpose.
+# geogrid+ungrib+metgrid; the util targets (int2nc et al.) are not part of
+# this pipeline and are not built.
 RUN set -o pipefail \
  && cd /opt/WPS \
  && sed -i 's|^#ARCH    Linux x86_64, gfortran|#ARCH    Linux x86_64 aarch64, gfortran|' arch/configure.defaults \
@@ -85,6 +85,8 @@ RUN set -o pipefail \
  && printf '1\n' | timeout 180 ./configure \
  && sed -i 's/^FFLAGS\([[:space:]]*\)=\(.*\)$/FFLAGS\1=\2 -fallow-argument-mismatch/' configure.wps \
  && sed -i 's/^F77FLAGS\([[:space:]]*\)=\(.*\)$/F77FLAGS\1=\2 -fallow-argument-mismatch/' configure.wps \
+ && sed -i 's/-lnetcdf$/-lnetcdf -lnetcdff/' configure.wps \
+ && grep -n "lnetcdf" configure.wps \
  && ./compile wps 2>&1 | tee /opt/WPS/compile.log | tail -30 \
  && test -s geogrid/src/geogrid.exe && test -s ungrib/src/ungrib.exe && test -s metgrid/src/metgrid.exe \
  && ls -l geogrid/src/geogrid.exe ungrib/src/ungrib.exe metgrid/src/metgrid.exe
