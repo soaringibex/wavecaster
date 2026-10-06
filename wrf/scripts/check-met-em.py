@@ -6,7 +6,10 @@ Usage: check-met-em.py <cycle-dir> [--times N]
 - Confirms one met_em file per domain per hour (37 × 2 for a 36 h cycle).
 - Confirms every field the Vtable must supply is present:
   PRES, HGT, TT, UU, VV, RH, PSFC, PMSL, SKINTEMP, SOILHGT, LANDSEA, SEAICE,
-  SNOW, plus soil temperature/moisture at all levels.
+  SNOW, plus soil temperature/moisture — either the Noah-style pair (ST, SM)
+  or the HRRR/RUC-style pair (SOILT, SOILM, 9 levels). real.exe converts the
+  RUC-style levels to Noah's four layers ("RUC -> Noah" in
+  module_initialize_real.F), which is why the HRRR path uses SOILT/SOILM.
 - Prints num_metgrid_levels / num_metgrid_soil_levels exactly as real.exe will
   read them (the run script copies these into namelist.input).
 """
@@ -19,10 +22,13 @@ from pathlib import Path
 
 import xarray as xr
 
-REQUIRED_3D_SOIL = ("ST", "SM")
 REQUIRED_2D = (
     "PRES", "HGT", "TT", "UU", "VV", "RH", "PSFC", "PMSL",
     "SKINTEMP", "SOILHGT", "LANDSEA", "SEAICE", "SNOW",
+)
+SOIL_SCHEMES = (
+    ("noah (ST/SM)", "ST", "SM", "num_st_layers"),
+    ("ruc/hrrr (SOILT/SOILM)", "SOILT", "SOILM", "num_soilt_levels"),
 )
 
 
@@ -40,23 +46,34 @@ def main() -> int:
         print("FAIL: unexpected met_em count", file=sys.stderr)
         return 1
 
-    failures = []
+    failures: list[str] = []
     with xr.open_dataset(d01[0]) as ds:
         variables = set(ds.variables)
         n_lev = int(ds.attrs.get("num_metgrid_levels", -1))
         n_soil = int(ds.attrs.get("num_metgrid_soil_levels", -1))
-        soil_levels = ds.sizes.get("num_soil_layers", 0)
+
         for name in REQUIRED_2D:
             if name not in variables:
                 failures.append(f"missing {name}")
-        for name in REQUIRED_3D_SOIL:
-            if name not in variables:
-                failures.append(f"missing {name}")
-            elif ds[name].shape[1] != soil_levels:
-                failures.append(f"{name}: {ds[name].shape[1]} levels, expected {soil_levels}")
+
+        found_soil = False
+        for label, temp_name, moist_name, dim_name in SOIL_SCHEMES:
+            if temp_name in variables and moist_name in variables:
+                temp = ds[temp_name]
+                moist = ds[moist_name]
+                levels_t = int(temp.shape[1]) if temp.ndim > 1 else 0
+                levels_m = int(moist.shape[1]) if moist.ndim > 1 else 0
+                dim = ds.sizes.get(dim_name, "n/a")
+                print(f"soil scheme present: {label} — {levels_t} temp / {levels_m} moist levels (dim {dim_name}={dim})")
+                if min(levels_t, levels_m) < 4:
+                    failures.append(f"{label}: only {min(levels_t, levels_m)} soil levels")
+                found_soil = True
+                break
+        if not found_soil:
+            failures.append("no soil pair present (ST/SM or SOILT/SOILM)")
+
         print(f"num_metgrid_levels      = {n_lev}")
         print(f"num_metgrid_soil_levels = {n_soil}")
-        print(f"soil variables present  = {[n for n in REQUIRED_3D_SOIL if n in variables]} at {soil_levels} levels")
         print(f"2-D fields present      = {len([n for n in REQUIRED_2D if n in variables])}/{len(REQUIRED_2D)}")
 
     if n_lev <= 0 or n_soil <= 0:

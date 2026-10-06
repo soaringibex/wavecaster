@@ -71,6 +71,12 @@ def main() -> int:
     index = OUT_DIR / "index"
     if not index.exists():
         raise SystemExit("convert_geotiff did not write an index file")
+    # WPS resolves rel_path entries under geog_data_path (= /wrf/geog/WPS_GEOG),
+    # while the converted tiles live at /wrf/geog/usgs_1s per the plan — a
+    # symlink gives WPS the layout it needs without duplicating 300 MB.
+    link = ROOT / "geog" / "WPS_GEOG" / "usgs_1s"
+    if not link.exists():
+        link.symlink_to(OUT_DIR)
     n_tiles = len([p for p in OUT_DIR.iterdir() if p.name[0].isdigit()])
     print(f"usgs_1s: index + {n_tiles} tiles written to {OUT_DIR}")
     print("---- index ----")
