@@ -50,7 +50,8 @@ def main() -> int:
     with xr.open_dataset(d01[0]) as ds:
         variables = set(ds.variables)
         bottom_top = int(ds.attrs.get("BOTTOM-TOP_GRID_DIMENSION", 0))
-        n_lev = bottom_top - 1 if bottom_top > 0 else -1
+        dim_levels = int(ds.sizes.get("num_metgrid_levels", 0))
+        n_lev = dim_levels if dim_levels > 0 else bottom_top
         n_soil = int(ds.attrs.get("NUM_METGRID_SOIL_LEVELS", -1))
 
         for name in REQUIRED_2D:
@@ -73,12 +74,12 @@ def main() -> int:
         if not found_soil:
             failures.append("no soil pair present (ST/SM or SOILT/SOILM)")
 
-        print(f"num_metgrid_levels      = {n_lev}  (BOTTOM-TOP_GRID_DIMENSION {bottom_top})")
+        print(f"num_metgrid_levels      = {n_lev}  (dim: {dim_levels}, BOTTOM-TOP_GRID_DIMENSION {bottom_top})")
         print(f"num_metgrid_soil_levels = {n_soil}  (NUM_METGRID_SOIL_LEVELS)")
         print(f"2-D fields present      = {len([n for n in REQUIRED_2D if n in variables])}/{len(REQUIRED_2D)}")
 
     if n_lev <= 0:
-        failures.append("BOTTOM-TOP_GRID_DIMENSION not readable from met_em")
+        failures.append("num_metgrid_levels not readable from met_em")
     if n_soil <= 0:
         failures.append("NUM_METGRID_SOIL_LEVELS not readable from met_em")
     if failures:
