@@ -75,6 +75,15 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
   current path), never copying them in once.
 - **Phase 3** is a 6-hour smoke run on the final namelist (not a shipped-default
   baseline); Phase 4 extends the same case to 36 h.
+- **Native fetch subsetting (2026-10-07)**: `fetch-hrrr.py --product nat --subset`
+  downloads only the messages `Vtable.NAT.trimmed` consumes, via .idx byte
+  ranges — 362 MB per hour instead of 663 MB. Herbie's subset download is
+  renamed to the canonical `hrrr.tHHz.wrfnatfFF.grib2` so every downstream
+  script is mode-agnostic (existence is the resume signal; switching
+  subset↔full in one cycle dir needs the GRIB cache removed). Validated
+  through the production pipeline — `cycle-steps.sh chunk` on the subset
+  reproduces the full-file `met_em` **field-for-field** (all 88 variables,
+  51 levels, 9 soil levels).
 - **WRF runtime files**: a custom run directory has none of WRF's `run/` data
   files, and `wrf.exe` fails at startup with a clear FATAL naming the missing
   one (`CAMtr_volume_mixing_ratio` for `ghg_input=1`, then `LANDUSE.TBL`). The
@@ -137,7 +146,8 @@ docker run --rm mtw-wrf:4.6.1 mpirun -np 10 hostname         # runs as root: OMP
   diurnal: ~350 s/h overnight, ~800–980 s/h in daylight (RRTMG radiative work),
   so the 6-h daytime smoke's 521 s/h was a high-water sample, not the average.
 - postprocess (145 frames, 72 cross-sections, 37 check PNGs): ~5 min.
-- fetch: 37 × ~660 MB NAT (~24 GB) + ~1 GB soil subsets — ~35 min on the home link.
+- fetch: 37 × **362 MB** NAT subset (`--subset` via .idx byte ranges, ~13.5 GB)
+  + ~1 GB soil subsets — ~20 min on the home link.
 - Full cycle wall on the MacBook: ~5–5.5 h (fetch + WPS + run + postprocess).
 
 ## Camp schedule (owner, 2026-10-07)

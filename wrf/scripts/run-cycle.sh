@@ -162,7 +162,7 @@ fi
 [ -n "${AVAIL_GB:-}" ] && log "free space: ${AVAIL_GB} GB"
 
 if [ "$SKIP_FETCH" -eq 0 ]; then
-  step fetch-nat "python -u /wrf/scripts/fetch-hrrr.py $CYCLE_DATE $CYCLE_HOUR --hours $HOURS --product nat --dest grib" || fail
+  step fetch-nat "python -u /wrf/scripts/fetch-hrrr.py $CYCLE_DATE $CYCLE_HOUR --hours $HOURS --product nat --subset --dest grib" || fail
   step fetch-soil "python -u /wrf/scripts/fetch-soil.py $CYCLE_DATE $CYCLE_HOUR --hours $HOURS --dest grib" || fail
 else
   log "fetch skipped (--skip-fetch)"
