@@ -81,6 +81,13 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
   `prepare` step copies the physics tables and RRTMG inputs
   (`LANDUSE/SOILPARM/VEGPARM/GENPARM/URBPARM*.TBL`, `RRTMG_LW_DATA`,
   `RRTMG_SW_DATA`, `CAMtr_volume_mixing_ratio`, `ozone*.formatted`).
+- **ungrib walks the namelist window** (2026-10-07): it does not filter the
+  linked GRIBs — it iterates `start_date..end_date` hourly and writes an
+  intermediate for each time it *finds*. Missing times print
+  `ERROR: Data not found` and it still exits 0, so a window that does not match
+  the chunk's GRIBs silently writes nothing. The chunk step therefore sets the
+  window to the chunk before ungrib and gates on the intermediate file count
+  (NAT:/SOIL: == expected), which is what caught the leftover-window bug.
 - **USGS 3DEP tile set**: the staged tiles are named by their **NW corner**, so
   the demanded 43.5–45.0 N window needs the `n44`+`n45` rows × `w071..w073`
   (an earlier `n43`+`n44` fetch stopped at 44 N and missed the range).

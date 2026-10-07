@@ -113,12 +113,26 @@ chunk)
     exit 0
   fi
 
+  # The ungrib window must BE the chunk's window: ungrib walks the namelist
+  # window hourly and writes only the times it finds — missing times are
+  # printed as errors but do not fail the run, so the output-count gates below
+  # are load-bearing, and a leftover window from the previous chunk silently
+  # produces zero intermediates.
+  sed -i "s/^ start_date = .*/ start_date = '$CSTART','$CSTART',/" namelist.wps
+  sed -i "s/^ end_date   = .*/ end_date   = '$CEND','$CEND',/" namelist.wps
+  rm -f NAT:* SOIL:*
+
   n=$(link_range "hrrr.t${HH}z.wrfnatf*.grib2" "$CS" "$CE")
   log "chunk $CS..$CE: linked $n NAT files (expect $EXPECT)"
   [ "$n" -eq "$EXPECT" ] || exit 1
   cp -f /wrf/wps/Vtable.NAT.trimmed Vtable
   sed -i "s/^ prefix = .*/ prefix = 'NAT',/" namelist.wps
   ./ungrib.exe > "logs/ungrib-nat-$CS-$CE.log" 2>&1 || { tail -8 "logs/ungrib-nat-$CS-$CE.log"; exit 1; }
+  [ "$(ls NAT:* 2>/dev/null | wc -l)" -eq "$EXPECT" ] || {
+    echo "ungrib NAT wrote $(ls NAT:* 2>/dev/null | wc -l) intermediate files, expected $EXPECT"
+    tail -8 "logs/ungrib-nat-$CS-$CE.log"
+    exit 1
+  }
 
   n=$(link_range "hrrr.t${HH}z.soilf*.grib2" "$CS" "$CE")
   log "chunk $CS..$CE: linked $n SOIL files (expect $EXPECT)"
@@ -126,9 +140,12 @@ chunk)
   cp -f /wrf/wps/Vtable.HRRR.wrfprs Vtable
   sed -i "s/^ prefix = .*/ prefix = 'SOIL',/" namelist.wps
   ./ungrib.exe > "logs/ungrib-soil-$CS-$CE.log" 2>&1 || { tail -8 "logs/ungrib-soil-$CS-$CE.log"; exit 1; }
+  [ "$(ls SOIL:* 2>/dev/null | wc -l)" -eq "$EXPECT" ] || {
+    echo "ungrib SOIL wrote $(ls SOIL:* 2>/dev/null | wc -l) intermediate files, expected $EXPECT"
+    tail -8 "logs/ungrib-soil-$CS-$CE.log"
+    exit 1
+  }
 
-  sed -i "s/^ start_date = .*/ start_date = '$CSTART','$CSTART',/" namelist.wps
-  sed -i "s/^ end_date   = .*/ end_date   = '$CEND','$CEND',/" namelist.wps
   ./metgrid.exe > "logs/metgrid-$CS-$CE.log" 2>&1 || { tail -8 "logs/metgrid-$CS-$CE.log"; exit 1; }
   grep -q "Successful completion" "logs/metgrid-$CS-$CE.log" || { tail -8 "logs/metgrid-$CS-$CE.log"; exit 1; }
   chunk_done "$CS" "$CE" "$CSTART" || { echo "chunk $CS..$CE incomplete after metgrid"; exit 1; }
