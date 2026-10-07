@@ -50,7 +50,7 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
   documented at 15 hPa). The `wrfprs` + `Vtable.RAP.pressure.ncep` pin was also wrong
   in a second way: that Vtable carries no soil/LANDSEA/SEAICE rows. The pipeline runs
   **`wrfnat`** for the atmosphere with **`Vtable.NAT.trimmed`** — the stock hybrid
-  table minus the hydrometeor rows (WFRe initializes condensate to zero; they were
+  table minus the hydrometeor rows (WRF initializes condensate to zero; they were
   3.8 GB of the 6.1 GB per-time intermediate and pushed ungrib past the VM's memory)
   and minus the soil rows (the native file's two SOILW records must not shadow the
   SOIL prefix) — plus a **~1 GB/cycle byte-range soil subset** from `wrfprs`
