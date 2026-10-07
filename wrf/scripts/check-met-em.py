@@ -5,13 +5,13 @@ Usage: check-met-em.py <cycle-dir> [--times N]
 
 - Confirms one met_em file per domain per hour (37 × 2 for a 36 h cycle).
 - Confirms every field the Vtable must supply is present:
-  PRES, HGT, TT, UU, VV, RH, PSFC, PMSL, SKINTEMP, SOILHGT, LANDSEA, SEAICE,
+  PRES, GHT, TT, UU, VV, RH, PSFC, PMSL, SKINTEMP, SOILHGT, LANDSEA, SEAICE,
   SNOW, plus soil temperature/moisture — either the Noah-style pair (ST, SM)
   or the HRRR/RUC-style pair (SOILT, SOILM, 9 levels). real.exe converts the
   RUC-style levels to Noah's four layers ("RUC -> Noah" in
   module_initialize_real.F), which is why the HRRR path uses SOILT/SOILM.
-- Prints num_metgrid_levels / num_metgrid_soil_levels exactly as real.exe will
-  read them (the run script copies these into namelist.input).
+- Prints the level counts real.exe will derive from the file
+  (BOTTOM-TOP_GRID_DIMENSION - 1 and NUM_METGRID_SOIL_LEVELS).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from pathlib import Path
 import xarray as xr
 
 REQUIRED_2D = (
-    "PRES", "HGT", "TT", "UU", "VV", "RH", "PSFC", "PMSL",
+    "PRES", "GHT", "TT", "UU", "VV", "RH", "PSFC", "PMSL",
     "SKINTEMP", "SOILHGT", "LANDSEA", "SEAICE", "SNOW",
 )
 SOIL_SCHEMES = (
@@ -49,8 +49,9 @@ def main() -> int:
     failures: list[str] = []
     with xr.open_dataset(d01[0]) as ds:
         variables = set(ds.variables)
-        n_lev = int(ds.attrs.get("num_metgrid_levels", -1))
-        n_soil = int(ds.attrs.get("num_metgrid_soil_levels", -1))
+        bottom_top = int(ds.attrs.get("BOTTOM-TOP_GRID_DIMENSION", 0))
+        n_lev = bottom_top - 1 if bottom_top > 0 else -1
+        n_soil = int(ds.attrs.get("NUM_METGRID_SOIL_LEVELS", -1))
 
         for name in REQUIRED_2D:
             if name not in variables:
@@ -72,12 +73,14 @@ def main() -> int:
         if not found_soil:
             failures.append("no soil pair present (ST/SM or SOILT/SOILM)")
 
-        print(f"num_metgrid_levels      = {n_lev}")
-        print(f"num_metgrid_soil_levels = {n_soil}")
+        print(f"num_metgrid_levels      = {n_lev}  (BOTTOM-TOP_GRID_DIMENSION {bottom_top})")
+        print(f"num_metgrid_soil_levels = {n_soil}  (NUM_METGRID_SOIL_LEVELS)")
         print(f"2-D fields present      = {len([n for n in REQUIRED_2D if n in variables])}/{len(REQUIRED_2D)}")
 
-    if n_lev <= 0 or n_soil <= 0:
-        failures.append("num_metgrid_levels/num_metgrid_soil_levels not readable from met_em")
+    if n_lev <= 0:
+        failures.append("BOTTOM-TOP_GRID_DIMENSION not readable from met_em")
+    if n_soil <= 0:
+        failures.append("NUM_METGRID_SOIL_LEVELS not readable from met_em")
     if failures:
         for failure in failures:
             print(f"FAIL: {failure}", file=sys.stderr)

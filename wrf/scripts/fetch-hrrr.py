@@ -35,7 +35,7 @@ def fetch_one(cycle: str, hour: int, fxx: int, dest: Path) -> Path:
             h = Herbie(
                 f"{cycle} {hour:02d}:00",
                 model="hrrr",
-                product="wrfprs",
+                product="prs",  # herbie name for the wrfprs files
                 fxx=fxx,
                 save_dir=str(dest),
             )
@@ -45,10 +45,16 @@ def fetch_one(cycle: str, hour: int, fxx: int, dest: Path) -> Path:
                 return path
             last_error = f"empty file {path}"
         except Exception as exc:  # noqa: BLE001 — any herbie/network error means retry
+            if isinstance(exc, (AssertionError, KeyError, TypeError, ValueError)):
+                # deterministic configuration error — retrying cannot help
+                raise RuntimeError(f"f{fxx:02d}: configuration error — {exc}") from exc
             text = str(exc).strip()
             last_error = text.splitlines()[-1] if text else repr(exc)
         if attempt < TRIES:
-            print(f"f{fxx:02d}: attempt {attempt} failed ({last_error}); retrying in {RETRY_DELAY_S}s")
+            print(
+                f"f{fxx:02d}: attempt {attempt} failed ({last_error}); retrying in {RETRY_DELAY_S}s",
+                flush=True,
+            )
             time.sleep(RETRY_DELAY_S)
     raise RuntimeError(f"f{fxx:02d}: {last_error}")
 
@@ -70,10 +76,10 @@ def main() -> int:
         try:
             path = fetch_one(cycle, args.hour, fxx, dest)
         except RuntimeError as exc:
-            print(f"f{fxx:02d}: FAILED — {exc}")
+            print(f"f{fxx:02d}: FAILED — {exc}", flush=True)
             failures.append(fxx)
             continue
-        print(f"f{fxx:02d}: {path.name}  {path.stat().st_size / 1e6:.0f} MB")
+        print(f"f{fxx:02d}: {path.name}  {path.stat().st_size / 1e6:.0f} MB", flush=True)
 
     if failures:
         print(f"missing hours: {failures}", file=sys.stderr)

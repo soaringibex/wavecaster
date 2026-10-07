@@ -1,23 +1,12 @@
 GRIB1| Level| From |  To  | metgrid  |  metgrid| metgrid                                 |GRIB2|GRIB2|GRIB2|GRIB2|
 Param| Type |Level1|Level2| Name     |  Units  | Description                             |Discp|Catgy|Param|Level|
 -----+------+------+------+----------+---------+-----------------------------------------+-----------------------+
-#
-# Vtable.HRRR.wrfprs — HRRR pressure-level files (hrrrtHHz.wrfprsfFF.grib2).
-# Built from WPS 4.6.0's Vtable.RAP.pressure.ncep (pressure + surface rows) plus
-# the soil/land/sea-ice rows of Vtable.RAP.hybrid.ncep, so the 9 HRRR soil
-# levels (0/1/4/10/30/60/100/160/300 cm) reach metgrid as SOILT*/SOILM* and
-# metgrid's ARW table derives SOILT/SOILM from them (real.exe converts
-# RUC-style levels to Noah's 4 layers).
-#
-GRIB1| Level| From |  To  | metgrid  |  metgrid| metgrid                                 |GRIB2|GRIB2|GRIB2|GRIB2|
-Param| Type |Level1|Level2| Name     |  Units  | Description                             |Discp|Catgy|Param|Level|
   11 | 100  |   *  |      | TT       | K       | Temperature                             |  0  |  0  |  0  | 100 |
   33 | 100  |   *  |      | UU       | m s-1   | U                                       |  0  |  2  |  2  | 100 |
   34 | 100  |   *  |      | VV       | m s-1   | V                                       |  0  |  2  |  3  | 100 |
   52 | 100  |   *  |      | RH       | %       | Relative Humidity                       |  0  |  1  |  1  | 100 |
    7 | 100  |   *  |      | HGT      | m       | Height                                  |  0  |  3  |  5  | 100 |
   11 | 105  |   2  |      | TT       | K       | Temperature       at 2 m                |  0  |  0  |  0  | 103 |
-     | 105  |   2  |      | RH       | %       | Relative Humidity at 2 m (n/a in p file)|  0  |  1  |  1  | 103 |
   51 | 105  |   2  |      | SPECHUMD | kg kg-1 |                                         |  0  |  1  |  0  | 103 |
   33 | 105  |  10  |      | UU       | m s-1   | U                 at 10 m               |  0  |  2  |  2  | 103 |
   34 | 105  |  10  |      | VV       | m s-1   | V                 at 10 m               |  0  |  2  |  3  | 103 |
@@ -54,3 +43,13 @@ Param| Type |Level1|Level2| Name     |  Units  | Description                    
  144 | 111  |   0  |      | SOILM000 | fraction | Soil Moist   0 cm below ground          |  2  |  0  | 192 | 106 |
   91 |   1  |   0  |      | SEAICE   |          | Ice flag                                | 10  |  2  |  0  |   1 |
   81 |   1  |   0  |      | LANDSEA  | proprtn  | Land/Sea flag (1=land, 0 or 2=sea)      |  2  |  0  |  0  |   1 |
+-----+------+------+------+----------+---------+-----------------------------------------+-----------------------+
+#
+# Vtable.HRRR.wrfprs — HRRR pressure-level files (hrrr.tHHz.wrfprsfFF.grib2).
+# Built from WPS 4.6.0's Vtable.RAP.pressure.ncep (pressure + surface rows) plus
+# the soil/land/sea-ice rows of Vtable.RAP.hybrid.ncep, so the 9 HRRR soil
+# levels (0/1/4/10/30/60/100/160/300 cm) reach metgrid as SOILT*/SOILM* and
+# metgrid's ARW table derives SOILT/SOILM from them (real.exe converts
+# RUC-style levels to Noah's 4 layers). The two depth-0@106 rows hedge the
+# encoding of the 0-cm level (the hybrid table stores it at level type 1).
+#
