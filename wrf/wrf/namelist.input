@@ -14,6 +14,15 @@
  start_hour = 12, 12,
  start_minute = 00, 00,
  start_second = 00, 00,
+! real.exe falls back to the registry-default end date (1993-03-14) unless
+! end_* are present, so they are always written out; the run script rewrites
+! start_* and end_* together each cycle (end = start + run_hours).
+ end_year = 2026, 2026,
+ end_month = 10, 10,
+ end_day = 08, 08,
+ end_hour = 00, 00,
+ end_minute = 00, 00,
+ end_second = 00, 00,
  interval_seconds = 3600,
  input_from_file = .true., .true.,
 ! 1 h for d01, 15 min for the 1 km nest (the nest is the product).
