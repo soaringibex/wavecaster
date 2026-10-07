@@ -45,8 +45,11 @@ prepare)
   ln -sf /opt/WPS/metgrid/src/metgrid.exe .
   ln -sf /opt/WRF/main/real.exe .
   ln -sf /opt/WRF/main/wrf.exe .
-  # RRTMG's greenhouse-gas input (ghg_input=1) is read from the run directory
-  cp -f /opt/WRF/run/CAMtr_volume_mixing_ratio* . 2>/dev/null || true
+  # WRF reads its runtime physics tables and RRTMG inputs from the run
+  # directory; a custom run directory has none of WRF's run/ files.
+  for f in LANDUSE.TBL SOILPARM.TBL VEGPARM.TBL GENPARM.TBL URBPARM.TBL URBPARM_LCZ.TBL RRTMG_LW_DATA RRTMG_SW_DATA CAMtr_volume_mixing_ratio ozone.formatted ozone_lat.formatted ozone_plev.formatted; do
+    cp -f "/opt/WRF/run/$f" . 2>/dev/null
+  done
   sed -i "s/^ start_date = .*/ start_date = '$START_ISO','$START_ISO',/" namelist.wps
   sed -i "s/^ end_date   = .*/ end_date   = '$END_ISO','$END_ISO',/" namelist.wps
   sed -i "s/^ start_year = .*/ start_year = $SY, $SY,/" namelist.input
