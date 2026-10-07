@@ -75,6 +75,12 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
   current path), never copying them in once.
 - **Phase 3** is a 6-hour smoke run on the final namelist (not a shipped-default
   baseline); Phase 4 extends the same case to 36 h.
+- **WRF runtime files**: a custom run directory has none of WRF's `run/` data
+  files, and `wrf.exe` fails at startup with a clear FATAL naming the missing
+  one (`CAMtr_volume_mixing_ratio` for `ghg_input=1`, then `LANDUSE.TBL`). The
+  `prepare` step copies the physics tables and RRTMG inputs
+  (`LANDUSE/SOILPARM/VEGPARM/GENPARM/URBPARM*.TBL`, `RRTMG_LW_DATA`,
+  `RRTMG_SW_DATA`, `CAMtr_volume_mixing_ratio`, `ozone*.formatted`).
 - **USGS 3DEP tile set**: the staged tiles are named by their **NW corner**, so
   the demanded 43.5–45.0 N window needs the `n44`+`n45` rows × `w071..w073`
   (an earlier `n43`+`n44` fetch stopped at 44 N and missed the range).
