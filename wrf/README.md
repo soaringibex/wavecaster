@@ -49,12 +49,17 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
   and HRRR tops out at **50 hPa** (`wrfprs`) and **~17.3 hPa** (`wrfnat`; HRRRv4 is
   documented at 15 hPa). The `wrfprs` + `Vtable.RAP.pressure.ncep` pin was also wrong
   in a second way: that Vtable carries no soil/LANDSEA/SEAICE rows. The pipeline runs
-  **`wrfnat` + the stock `Vtable.RAP.hybrid.ncep`** for the atmosphere (51 native
-  levels) plus a **~1 GB/cycle byte-range soil subset** from `wrfprs` (`fetch-soil.py`,
-  ~27 MB/hour), merged by metgrid as `fg_name = 'NAT','SOIL'`. `p_top_requested = 1800`
-  (~26.9 km top), and `check-levels.py` gates the Rayleigh sponge (`zdamp = 5000` m) to
-  hold at least 5–6 levels. `Vtable.HRRR.wrfprs` remains in the repo as the soil
-  prefix's table.
+  **`wrfnat`** for the atmosphere with **`Vtable.NAT.trimmed`** — the stock hybrid
+  table minus the hydrometeor rows (WFRe initializes condensate to zero; they were
+  3.8 GB of the 6.1 GB per-time intermediate and pushed ungrib past the VM's memory)
+  and minus the soil rows (the native file's two SOILW records must not shadow the
+  SOIL prefix) — plus a **~1 GB/cycle byte-range soil subset** from `wrfprs`
+  (`fetch-soil.py`, ~27 MB/hour), merged by metgrid as `fg_name = 'NAT','SOIL'`.
+  `p_top_requested = 1800` (~26.9 km top), and `check-levels.py` gates the Rayleigh
+  sponge (`zdamp = 5000` m) to hold at least 5–6 levels. `Vtable.HRRR.wrfprs` remains
+  in the repo as the soil prefix's table. Native intermediates are ~2 GB per time, so
+  the cycle processes in chunks and deletes each chunk's intermediates after metgrid
+  (~74 GB if retained for all 37 times).
 - **Documented fallback (not built)**: if the ~24 GB/cycle native fetch becomes a
   problem, use `wrfprs` plus a **GFS 0.25° upper-level byte-range subset** as a third
   `fg_name` for a true 10-hPa lid — the seam sits at 50 hPa, above the waves and below
