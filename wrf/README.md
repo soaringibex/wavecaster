@@ -46,6 +46,23 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
 - **`num_metgrid_levels` / `num_metgrid_soil_levels`**: never hardcoded — the run
   script reads them from the `met_em` headers; the namelist carries a `-999`
   sentinel so a stray `real.exe` fails loudly.
+- **USGS 3DEP tile set**: the staged tiles are named by their **NW corner**, so
+  the demanded 43.5–45.0 N window needs the `n44`+`n45` rows × `w071..w073`
+  (an earlier `n43`+`n44` fetch stopped at 44 N and missed the range).
+- **convert_geotiff 0.1.0 — two anomalies, handled in `build-terrain.py`**:
+  its tiled copy loop never clamps to the image edge (heap overflow/SIGSEGV on
+  partial edge tiles), so the mosaic is padded to multiples of the source
+  TIFFs' 512-px internal tiles; and it mis-reads `ModelPixelScale` (writes
+  stack residue — observed `dx = 2.743193e-04` against the true `2.777778e-04`,
+  a ~1.2 km terrain displacement), so the script rewrites the four
+  georeference fields in `usgs_1s/index` from the mosaic's own transform after
+  asserting the origin agrees within ~10 m.
+- **GEOGRID.TBL HGT_M for `usgs_1s`**: `four_pt+average_4pt` interpolation
+  (the 30″ recipes' `average_gcell(4.0)` averages ~4 km and flattens the
+  summit), and the block's `smth-desmth` smoothing is disabled (it removes
+  ~130 m from the Presidential peaks; d02 max 1825 m unsmoothed vs 1693 m with
+  it). Gate: d02 max HGT_M 1824.8 m at 44.2685/−71.3063 — 310 m from the
+  summit, the expected bilinear result on a 1 km grid; d01 max 1490.0 m.
 - **Phase 3** is a 6-hour smoke run on the final namelist (not a shipped-default
   baseline); Phase 4 extends the same case to 36 h.
 

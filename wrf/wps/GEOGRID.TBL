@@ -4,7 +4,9 @@
 name = HGT_M
         priority = 1
         dest_type = continuous
-        smooth_option = smth-desmth_special; smooth_passes=1
+        # smoothing off: the 1″ usgs_1s terrain resolves the summit and the
+        # standard smth-desmth pass removes ~200 m from the Presidential peaks
+        # (with 30″ data it is appropriate, with 1″ data it is not).
         fill_missing=0.
         interp_option = gmted2010_30s:average_gcell(4.0)+four_pt+average_4pt
         interp_option =     gtopo_30s:average_gcell(4.0)+four_pt+average_4pt
@@ -20,7 +22,7 @@ name = HGT_M
         rel_path =     gtopo_10m:topo_10m/
         rel_path =        lowres:topo_gmted2010_5m/
         rel_path =       default:topo_gmted2010_30s/
-        interp_option = usgs_1s:average_gcell(4.0)+four_pt+average_4pt
+        interp_option = usgs_1s:four_pt+average_4pt
         rel_path = usgs_1s:usgs_1s/
 ===============================
 name=LANDUSEF
