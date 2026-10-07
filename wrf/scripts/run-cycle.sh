@@ -16,6 +16,13 @@ WRF_DIR="$ROOT/wrf"
 IMAGE="mtw-wrf:4.6.1"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
+# Sleep-proofing: every entry point (terminal, launchd, camp) runs the cycle
+# under caffeinate, so a long run can never be suspended mid-model.
+if [ -z "${WRF_CAFFEINATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
+  export WRF_CAFFEINATED=1
+  exec caffeinate -i "$0" "$@"
+fi
+
 HOURS=36
 CHUNK_HOURS=12
 SKIP_FETCH=0

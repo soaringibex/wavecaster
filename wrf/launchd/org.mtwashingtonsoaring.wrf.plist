@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.mtwashingtonsoaring.wrf</string>
+
+	<!-- Camp schedule: the 00Z and 06Z HRRR cycles, fired at 01:45 and 07:45
+	     UTC. launchd fires on LOCAL time, so these hours are the EDT mapping
+	     (America/New_York = UTC-4) and they are 21:45 and 03:45 local.
+	     During EST they land one hour later in UTC (02:45/08:45Z): both cycles
+	     are fully posted by then, the forecasts just finish an hour later.
+	     run-cycle.sh picks the cycle from the CURRENT UTC time, so a
+	     one-hour drift never selects the wrong cycle. -->
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>21</integer>
+			<key>Minute</key>
+			<integer>45</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>3</integer>
+			<key>Minute</key>
+			<integer>45</integer>
+		</dict>
+	</array>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/bash</string>
+		<string>/Users/thomasvdv/GitHub/wavecaster/wrf/scripts/run-cycle.sh</string>
+		<string>latest</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/thomasvdv/GitHub/wavecaster</string>
+	<key>StandardOutPath</key>
+	<string>/Users/thomasvdv/GitHub/wavecaster/wrf/out/logs/launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/thomasvdv/GitHub/wavecaster/wrf/out/logs/launchd.log</string>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>
