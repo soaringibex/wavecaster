@@ -4,5 +4,8 @@ wrf/out/
 wrf/.env
 wrf/docker/src/
 
+# node (publish scripts)
+node_modules/
+
 # macOS
 .DS_Store

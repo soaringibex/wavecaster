@@ -1,0 +1,12 @@
+{
+  "name": "wavecaster",
+  "private": true,
+  "type": "module",
+  "description": "WRF 1 km wave-forecast pipeline for the Mt Washington wave camp (wrf/)",
+  "scripts": {
+    "publish-run": "node wrf/scripts/publish.mts"
+  },
+  "devDependencies": {
+    "@vercel/blob": "^2.0.0"
+  }
+}
