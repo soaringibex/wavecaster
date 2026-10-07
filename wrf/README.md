@@ -43,9 +43,25 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
   `dzbot=50, dzstretch_s=dzstretch_u=1.035, max_dz=1000, e_vert=100`.
 - **Disk policy**: GRIB deleted after a successful metgrid; `met_em` + `wrfout`
   kept 3 days; logs/`run.json`/check PNGs 30 days.
-- **`num_metgrid_levels` / `num_metgrid_soil_levels`**: never hardcoded — the run
-  script reads them from the `met_em` headers; the namelist carries a `-999`
-  sentinel so a stray `real.exe` fails loudly.
+- **Vtable (audited 2026-10-07 against HRRR `wrfprs` 2026-10-06 12Z f00)**: the
+  stock `Vtable.RAP.pressure.ncep` supplies no soil, `LANDSEA` or `SEAICE`;
+  `Vtable.GFS` loses `PMSL` and its depth-ranged soil rows do not match HRRR's
+  9-level soil encoding (met_em comes out with zero soil levels). The pipeline
+  therefore uses **`wrf/wps/Vtable.HRRR.wrfprs`**, built from the RAP pressure
+  table plus the soil/land/sea-ice rows of `Vtable.RAP.hybrid.ncep`; the
+  met_em audit shows `SOILT`/`SOILM` with 9 levels, `LANDSEA`, `SEAICE`, and
+  `NUM_METGRID_SOIL_LEVELS = 9` — everything real.exe needs, from the
+  pressure-level files alone (no `wrfsfc`/`wrfnat` fetch required).
+- **WPS `parse_table` quirks found while building that table**: comments are
+  fine anywhere and must be followed by... the data rows must end with a
+  `-----` separator line — reading to EOF without one is "Read error 2"; and a
+  `GRIB1|` column-header line left inside the rows is a fatal
+  "Bad integer for item 1". Both handled in the committed table.
+- **`num_metgrid_levels`**: met_em carries `BOTTOM-TOP_GRID_DIMENSION` (levels+1)
+  and `NUM_METGRID_SOIL_LEVELS`; the run script derives the namelist values
+  from those (40 and 9 for this case), never hardcoding them.
+- **Phase 3** is a 6-hour smoke run on the final namelist (not a shipped-default
+  baseline); Phase 4 extends the same case to 36 h.
 - **USGS 3DEP tile set**: the staged tiles are named by their **NW corner**, so
   the demanded 43.5–45.0 N window needs the `n44`+`n45` rows × `w071..w073`
   (an earlier `n43`+`n44` fetch stopped at 44 N and missed the range).
