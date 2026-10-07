@@ -16,7 +16,7 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
 | MPI | OpenMPI 4.1.6 (`libopenmpi-dev`) |
 | NetCDF / HDF5 / zlib / libpng | Ubuntu: netcdf-c 4.9.2, netcdf-fortran 4.6.0, hdf5 1.10.10, zlib 1.3, libpng 1.6.43 |
 | Python | conda-forge python 3.12 + wrf-python 1.4.2, xarray, netCDF4, scipy, matplotlib, rasterio, boto3, herbie-data — exact manifest `/opt/venv/conda-explicit.txt` in the image (filled in below after the first build) |
-| Vtable | `Vtable.RAP.pressure.ncep` from WPS 4.6.0 (`wrf/wps/`) |
+| Vtable | atmosphere: stock `Vtable.RAP.hybrid.ncep` (`wrfnat`); soil prefix: `Vtable.HRRR.wrfprs` (the audited merge) |
 | HRRR | `s3://noaa-hrrr-bdp-pds`, `hrrr.tHHz.wrfprsfFF.grib2` (anonymous HTTPS/S3) |
 | 3DEP terrain | `s3://prd-tnm/StagedProducts/Elevation/1/TIFF/current/…` (anonymous), 6 tiles n43/n44 × w071/w072/w073 |
 | Blob base URL | _pending — owner creates the store under the mtwashingtonsoaring Vercel project_ |
@@ -38,28 +38,36 @@ lands at `/opt/venv/conda-explicit.txt` inside the image.
 - **wrf-python** comes from conda-forge (linux-aarch64, 1.4.2): its pip sdist
   does not build on Python 3.12 (`numpy.distutils` was removed). Same API
   (`destagger`, `to_np`, `interplevel`).
-- **Vertical grid**: `max_dz = 4` in PROMPT.md is metres in WRF 4.6.1 and makes
-  `real.exe` fatal ("Upper levels may be too thick"). Retuned per owner:
-  `dzbot=50, dzstretch_s=dzstretch_u=1.035, max_dz=1000, e_vert=100`.
+- **Vertical grid (owner-retuned 2026-10-07)**: `dzbot=50, dzstretch_s=dzstretch_u=1.035,
+  max_dz=1000, e_vert=100` (`max_dz=4` in PROMPT.md is metres in WRF 4.6.1 and makes
+  real.exe fatal — "Upper levels may be too thick"); `p_top_requested = 1800` — the
+  data ceiling, see the lid note below.
 - **Disk policy**: GRIB deleted after a successful metgrid; `met_em` + `wrfout`
   kept 3 days; logs/`run.json`/check PNGs 30 days.
-- **Vtable (audited 2026-10-07 against HRRR `wrfprs` 2026-10-06 12Z f00)**: the
-  stock `Vtable.RAP.pressure.ncep` supplies no soil, `LANDSEA` or `SEAICE`;
-  `Vtable.GFS` loses `PMSL` and its depth-ranged soil rows do not match HRRR's
-  9-level soil encoding (met_em comes out with zero soil levels). The pipeline
-  therefore uses **`wrf/wps/Vtable.HRRR.wrfprs`**, built from the RAP pressure
-  table plus the soil/land/sea-ice rows of `Vtable.RAP.hybrid.ncep`; the
-  met_em audit shows `SOILT`/`SOILM` with 9 levels, `LANDSEA`, `SEAICE`, and
-  `NUM_METGRID_SOIL_LEVELS = 9` — everything real.exe needs, from the
-  pressure-level files alone (no `wrfsfc`/`wrfnat` fetch required).
+- **Lid / product pin superseded (owner, 2026-10-07)**: PROMPT.md's "10 hPa top from
+  HRRR" is impossible — real.exe refuses any top below the data's top-level pressure,
+  and HRRR tops out at **50 hPa** (`wrfprs`) and **~17.3 hPa** (`wrfnat`; HRRRv4 is
+  documented at 15 hPa). The `wrfprs` + `Vtable.RAP.pressure.ncep` pin was also wrong
+  in a second way: that Vtable carries no soil/LANDSEA/SEAICE rows. The pipeline runs
+  **`wrfnat` + the stock `Vtable.RAP.hybrid.ncep`** for the atmosphere (51 native
+  levels) plus a **~1 GB/cycle byte-range soil subset** from `wrfprs` (`fetch-soil.py`,
+  ~27 MB/hour), merged by metgrid as `fg_name = 'NAT','SOIL'`. `p_top_requested = 1800`
+  (~26.9 km top), and `check-levels.py` gates the Rayleigh sponge (`zdamp = 5000` m) to
+  hold at least 5–6 levels. `Vtable.HRRR.wrfprs` remains in the repo as the soil
+  prefix's table.
+- **Documented fallback (not built)**: if the ~24 GB/cycle native fetch becomes a
+  problem, use `wrfprs` plus a **GFS 0.25° upper-level byte-range subset** as a third
+  `fg_name` for a true 10-hPa lid — the seam sits at 50 hPa, above the waves and below
+  the sponge. Same merge machinery as the soil subset.
 - **WPS `parse_table` quirks found while building that table**: comments are
   fine anywhere and must be followed by... the data rows must end with a
   `-----` separator line — reading to EOF without one is "Read error 2"; and a
   `GRIB1|` column-header line left inside the rows is a fatal
   "Bad integer for item 1". Both handled in the committed table.
-- **`num_metgrid_levels`**: met_em carries `BOTTOM-TOP_GRID_DIMENSION` (levels+1)
-  and `NUM_METGRID_SOIL_LEVELS`; the run script derives the namelist values
-  from those (40 and 9 for this case), never hardcoding them.
+- **`num_metgrid_levels`**: met_em carries the `num_metgrid_levels` dimension (41 for
+  the pressure path, 51 for the native path) and `NUM_METGRID_SOIL_LEVELS`; the run
+  script derives both namelist values from the file at run time (51 and 9 for the
+  current path), never copying them in once.
 - **Phase 3** is a 6-hour smoke run on the final namelist (not a shipped-default
   baseline); Phase 4 extends the same case to 36 h.
 - **USGS 3DEP tile set**: the staged tiles are named by their **NW corner**, so
