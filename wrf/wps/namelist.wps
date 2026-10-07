@@ -28,6 +28,6 @@
  prefix = 'FILE',
 /
 &metgrid
- fg_name = 'FILE',
+ fg_name = 'NAT','SOIL',
  io_form_metgrid = 2,
 /

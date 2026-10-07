@@ -47,9 +47,12 @@
  e_we = 121, 151,
  e_sn = 121, 151,
  e_vert = 100, 100,
-! 10 hPa lid. With the Rayleigh damping layer this keeps mountain waves from
-! reflecting off the top back into the field we are producing.
- p_top_requested = 1000,
+! Lid at the data's ceiling (owner decision 2026-10-07): HRRR tops out at
+! ~17.3 hPa in its native product, so the prompt's 10 hPa is not reachable from
+! HRRR at all; 1800 Pa is the highest available lid (~26.9 km model top). With
+! the Rayleigh layer this keeps mountain waves from reflecting off the top back
+! into the field we are producing.
+ p_top_requested = 1800,
 ! Filled by run-cycle.sh from the met_em headers — never hardcoded here.
  num_metgrid_levels = -999,
  num_metgrid_soil_levels = -999,

@@ -76,20 +76,20 @@ exactly as pinned; `i_parent_start`/`j_parent_start` computed so d02 centres on 
 *Gate:* max `HGT_M` on d02 ≥ 1,750 m; printed height at 44.2705 N / 71.3032 W; d01 max for
 comparison; `wrf/out/checks/hgt_d02.png`.
 
-**Phase 3 — data + 6-h smoke run.** `fetch-hrrr.py` (herbie, anonymous S3, ff 00–36);
-ungrib with `Vtable.HRRR.wrfprs` — the audited merge of the stock RAP pressure table
-and the RAP hybrid table's soil/land/ice rows. (PROMPT.md's pin was wrong on this
-point: `Vtable.RAP.pressure.ncep` supplies no soil/LANDSEA/SEAICE, and `Vtable.GFS`
-loses PMSL and HRRR's soil encoding — audit evidence in `wrf/README.md`.) Field
-audit per the supply table. real.exe reads `num_metgrid_levels` /
-`num_metgrid_soil_levels` **derived at run time** from the met_em headers
-(`BOTTOM-TOP_GRID_DIMENSION`/`NUM_METGRID_SOIL_LEVELS`), never hardcoded. **Soil
-gate before the smoke run counts:** `check-wrfinput-soil.py` — SMOIS volumetric
-(~0.05–0.45 m³/m³), TSLB ~275–295 K, 4 Noah layers from the 9 RUC levels, and
-`real.exe`'s log shows the "Assume RUC LSM" multi-level path. 6-h wrf run with the
-final namelist under `caffeinate -i`, `mpirun -np 10`; per-forecast-hour timing
-recorded. *Gate:* frame count, `SUCCESS COMPLETE WRF`, no CFL warnings; timing
-reported.
+**Phase 3 — data + 6-h smoke run.** `fetch-hrrr.py --product nat` (native hybrid
+levels, the only product reaching HRRR's ~17.3 hPa top) + `fetch-soil.py` (the
+`wrfprs` soil subset via `.idx` byte ranges, ~27 MB/hour). Two ungrib runs — `NAT`
+(`Vtable.RAP.hybrid.ncep`, stock) and `SOIL` (`Vtable.HRRR.wrfprs`, the audited
+merge) — merged by metgrid as `fg_name = 'NAT','SOIL'` (met_em: 51 native levels +
+9-level soil; PROMPT.md's 10 hPa top is impossible from HRRR — see README).
+`num_metgrid_levels`/`num_metgrid_soil_levels` are derived from the met_em header
+**at run time**, never hardcoded. Gates after real: the soil assertion
+(`check-wrfinput-soil.py`: SMOIS volumetric, TSLB ~275–295 K, 4 Noah layers from
+the 9 RUC levels, "Assume RUC LSM" in the log) **and** the level/sponge gate
+(`check-levels.py`: first 20 level heights printed; ≥ 5–6 levels inside the top
+5000 m Rayleigh layer). Then the 6-h wrf run under `caffeinate -i`,
+`mpirun -np 10`; per-forecast-hour timing recorded. *Gate:* frame count,
+`SUCCESS COMPLETE WRF`, no CFL warnings; timing reported.
 
 **Phase 4 — wave physics, full 36-h case.** Pinned namelist (10 hPa top + Rayleigh, `w_damping=0`,
 no cumulus, MYNN/Thompson/RRTMG, `diff_opt=2 / km_opt=4 / epssm=0.5`, retuned levels), rationale

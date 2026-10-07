@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Fetch HRRR pressure-level GRIB2 files for one cycle (runs inside the image).
+"""Fetch HRRR GRIB2 files for one cycle (runs inside the image).
 
 Usage:
-    fetch-hrrr.py <YYYYMMDD> <HH> --dest DIR [--hours 36]
+    fetch-hrrr.py <YYYYMMDD> <HH> --dest DIR [--hours 36] [--product prs|nat|sfc]
 
-Downloads hrrr.tHHz.wrfprsfFF.grib2 for FF = 00..hours from the anonymous
-s3://noaa-hrrr-bdp-pds bucket via Herbie, with resume (existing files are
-skipped) and a retry window for hours that have not posted yet — the camp
-schedule fires shortly after the last hour lands. Exits non-zero if any hour is
-still missing after the window, so a partial cycle can never start a run.
+Downloads `hrrr.tHHz.wrfprs|wrfprs...` — herbie's product names `prs` (pressure
+files), `nat` (native hybrid levels; the only product reaching HRRR's ~17 hPa
+model top) and `sfc` — from the anonymous s3://noaa-hrrr-bdp-pds bucket via
+Herbie, with resume (existing files are skipped) and a retry window for hours
+that have not posted yet — the camp schedule fires shortly after the last hour
+lands. Exits non-zero if any hour is still missing after the window, so a
+partial cycle can never start a run.
 
-Only 00/06/12/18Z cycles carry long forecasts; this pipeline runs 36 h.
-The pressure-level product (wrfprs) is the robust default; native levels
-(wrfnat) are a possible later switch (see wrf/PLAN.md).
+The pipeline runs `--product nat` (atmosphere) plus the soil subset from the
+pressure files (`fetch-soil.py`) — see wrf/README.md.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ RETRY_DELAY_S = 60
 TRIES = 8
 
 
-def fetch_one(cycle: str, hour: int, fxx: int, dest: Path) -> Path:
+def fetch_one(cycle: str, hour: int, fxx: int, dest: Path, product: str) -> Path:
     from herbie import Herbie
 
     last_error = "unknown"
@@ -35,7 +36,7 @@ def fetch_one(cycle: str, hour: int, fxx: int, dest: Path) -> Path:
             h = Herbie(
                 f"{cycle} {hour:02d}:00",
                 model="hrrr",
-                product="prs",  # herbie name for the wrfprs files
+                product=product,  # herbie names: prs / nat / sfc
                 fxx=fxx,
                 save_dir=str(dest),
             )
@@ -64,6 +65,7 @@ def main() -> int:
     parser.add_argument("date", help="cycle date, YYYYMMDD")
     parser.add_argument("hour", type=int, help="cycle hour, UTC")
     parser.add_argument("--hours", type=int, default=36)
+    parser.add_argument("--product", default="prs", choices=["prs", "nat", "sfc"])
     parser.add_argument("--dest", required=True, help="directory for the GRIB files")
     args = parser.parse_args()
 
@@ -74,7 +76,7 @@ def main() -> int:
     failures = []
     for fxx in range(args.hours + 1):
         try:
-            path = fetch_one(cycle, args.hour, fxx, dest)
+            path = fetch_one(cycle, args.hour, fxx, dest, args.product)
         except RuntimeError as exc:
             print(f"f{fxx:02d}: FAILED — {exc}", flush=True)
             failures.append(fxx)
