@@ -175,4 +175,6 @@ Disk: `wrfout` is kept **1 day** (the JSON products are what the site needs;
 `run.json`, logs and check PNGs persist 30 days), and `iofields_d02.txt` drops
 U, V, QCLOUD and the hydrometeors — roughly a third lighter per run. Check
 PNGs are named by valid datetime (`w3km_<cycle>_v<YYYY-MM-DDTHH>Z.png`); the
-old hour-of-day names collided across days in a 36-h run.
+old hour-of-day names collided across days in a 36-h run. A `KEEP` file inside
+a cycle directory pins it — the retention pass skips it entirely (wrfout,
+met_em, and the 30-day directory sweep).

@@ -198,9 +198,13 @@ fi
 host_step cleanup-retention "
   rm -f '$CYCLE_DIR'/wrfout_d01_* 2>/dev/null
   rm -rf '$CYCLE_DIR'/grib 2>/dev/null
-  find '$WRF_DIR/out' -name 'wrfout_d0*' -mtime +1 -delete 2>/dev/null
-  find '$WRF_DIR/out' -name 'met_em.*' -mtime +3 -delete 2>/dev/null
-  find '$WRF_DIR/out' -maxdepth 1 -type d -name '20*' -mtime +30 -exec rm -rf {} + 2>/dev/null
+  # A cycle directory containing a KEEP file is never pruned (reference cases).
+  for d in '$WRF_DIR'/out/20*/; do
+    [ -e \"\$d/KEEP\" ] && continue
+    find \"\$d\" -name 'wrfout_d0*' -mtime +1 -delete 2>/dev/null
+    find \"\$d\" -name 'met_em.*' -mtime +3 -delete 2>/dev/null
+  done
+  find '$WRF_DIR/out' -maxdepth 1 -type d -name '20*' -mtime +30 -exec sh -c 'test -e \"\$1/KEEP\" || rm -rf \"\$1\"' _ {} + 2>/dev/null
   true" || fail
 
 log "cycle $CYCLE_ID complete (wrf wall ${WALL_SECONDS}s)"
