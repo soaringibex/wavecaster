@@ -5,18 +5,20 @@
 	<key>Label</key>
 	<string>org.mtwashingtonsoaring.wrf</string>
 
-	<!-- Camp schedule: the 00Z and 06Z HRRR cycles, fired at 01:45 and 07:45
-	     UTC. launchd fires on LOCAL time, so these hours are the EDT mapping
-	     (America/New_York = UTC-4) and they are 21:45 and 03:45 local.
-	     During EST they land one hour later in UTC (02:45/08:45Z): both cycles
-	     are fully posted by then, the forecasts just finish an hour later.
-	     run-cycle.sh picks the cycle from the CURRENT UTC time, so a
-	     one-hour drift never selects the wrong cycle. -->
+	<!-- Camp schedule (owner, 2026-10-07): the 18Z and 06Z HRRR cycles, fired
+	     at 19:45 and 07:45 UTC — the 18Z product (28 h, through 22Z the next
+	     day) is the evening product and covers the whole next flying day, the
+	     06Z product (18 h) is the morning one. launchd fires on LOCAL time, so
+	     these hours are the EDT mapping (America/New_York = UTC-4) and they
+	     are 15:45 and 03:45 local. During EST they land one hour later in UTC
+	     (20:45/08:45Z): both cycles are fully posted by then, the forecasts
+	     just finish an hour later. run-cycle.sh picks the cycle from the
+	     CURRENT UTC time, so a one-hour drift never selects the wrong cycle. -->
 	<key>StartCalendarInterval</key>
 	<array>
 		<dict>
 			<key>Hour</key>
-			<integer>21</integer>
+			<integer>15</integer>
 			<key>Minute</key>
 			<integer>45</integer>
 		</dict>

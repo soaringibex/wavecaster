@@ -5,7 +5,8 @@ Emits, into the run directory (or --output-dir):
   map-field.json             247 locations × map levels × times (Open-Meteo layout)
   cross-section-<az>.json    one per 5° bucket: 15 transect points × 12 levels
   run.json                   cycle/init/length/wall-time/terrain/status
-  checks/w3km_<cycle>_<hh>.png   hourly W at 3 km ASL for human verification
+  checks/w3km_<cycle>_v<valid-datetime>.png  hourly W at 3 km ASL for human
+                                             verification
 
 The grid contract (map grid, levels, transect definition) comes from
 --contract JSON, generated from mtwashingtonsoaring/src/lib/wx-grid.ts by
@@ -127,7 +128,6 @@ class WrfDomain:
         self.w = []
         self.z = []
         self.p = []
-        self.psfc = []
         self.hgt = None
         self.xlat = None
         self.xlon = None
@@ -139,7 +139,6 @@ class WrfDomain:
                 z_stag = (ds["PH"].values + ds["PHB"].values) / G
                 self.z.append(0.5 * (z_stag[:, :-1] + z_stag[:, 1:]))
                 self.p.append(ds["P"].values + ds["PB"].values)
-                self.psfc.append(ds["PSFC"].values)
                 if self.hgt is None:
                     self.hgt = ds["HGT"].values[0] if ds["HGT"].ndim == 3 else ds["HGT"].values
                     self.xlat = ds["XLAT"].values[0] if ds["XLAT"].ndim == 3 else ds["XLAT"].values
@@ -147,7 +146,6 @@ class WrfDomain:
         self.w = np.concatenate(self.w, axis=0)
         self.z = np.concatenate(self.z, axis=0)
         self.p = np.concatenate(self.p, axis=0)
-        self.psfc = np.concatenate(self.psfc, axis=0)
         # ll_to_xy needs a netCDF4 handle (wrf-python rejects the xarray one)
         self._nc = netCDF4.Dataset(files[0])
 
@@ -274,7 +272,10 @@ def write_check_pngs(domain: WrfDomain, output_dir: Path, cycle: str) -> list[Pa
         ax.set_xlabel("longitude")
         ax.set_ylabel("latitude")
         fig.colorbar(mesh, ax=ax, label="m/s")
-        out = checks / f"w3km_{cycle}_{t.strftime('%H')}Z.png"
+        # Name by the VALID datetime, not hour-of-day: a 36-h run contains two
+        # 20Z frames and the hour-only name silently overwrote the first with
+        # the second (37 frames -> 24 names).
+        out = checks / f"w3km_{cycle}_v{t.strftime('%Y-%m-%dT%HZ')}.png"
         fig.savefig(out, bbox_inches="tight")
         plt.close(fig)
         written.append(out)

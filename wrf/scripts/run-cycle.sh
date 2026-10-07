@@ -23,7 +23,7 @@ if [ -z "${WRF_CAFFEINATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
   exec caffeinate -i "$0" "$@"
 fi
 
-HOURS=36
+HOURS=""   # decided per cycle below unless --hours overrides
 CHUNK_HOURS=12
 SKIP_FETCH=0
 NO_PUBLISH=0
@@ -49,6 +49,19 @@ else
   echo "usage: run-cycle.sh latest|<YYYYMMDD> <HH> [--hours N] [--chunk-hours N] [--skip-fetch] [--no-publish]" >&2
   exit 2
 fi
+
+if [ -z "$HOURS" ]; then
+  # Forecast length matched to the briefing it serves (owner, 2026-10-07):
+  # the 18Z cycle runs 28 h (through 22Z the next day — the whole next flying
+  # day), the 06Z cycle runs 18 h (through 00Z). Manual runs of other cycles
+  # keep the full 36 h. --hours overrides any of it.
+  case "$CYCLE_HOUR" in
+    18) HOURS=28 ;;
+    06) HOURS=18 ;;
+    *) HOURS=36 ;;
+  esac
+fi
+
 CYCLE_ID="${CYCLE_DATE}T${CYCLE_HOUR}Z"
 
 if pmset -g batt | grep -q "Battery Power"; then
@@ -185,7 +198,7 @@ fi
 host_step cleanup-retention "
   rm -f '$CYCLE_DIR'/wrfout_d01_* 2>/dev/null
   rm -rf '$CYCLE_DIR'/grib 2>/dev/null
-  find '$WRF_DIR/out' -name 'wrfout_d0*' -mtime +3 -delete 2>/dev/null
+  find '$WRF_DIR/out' -name 'wrfout_d0*' -mtime +1 -delete 2>/dev/null
   find '$WRF_DIR/out' -name 'met_em.*' -mtime +3 -delete 2>/dev/null
   find '$WRF_DIR/out' -maxdepth 1 -type d -name '20*' -mtime +30 -exec rm -rf {} + 2>/dev/null
   true" || fail

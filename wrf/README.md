@@ -139,3 +139,30 @@ docker run --rm mtw-wrf:4.6.1 mpirun -np 10 hostname         # runs as root: OMP
 - postprocess (145 frames, 72 cross-sections, 37 check PNGs): ~5 min.
 - fetch: 37 × ~660 MB NAT (~24 GB) + ~1 GB soil subsets — ~35 min on the home link.
 - Full cycle wall on the MacBook: ~5–5.5 h (fetch + WPS + run + postprocess).
+
+## Camp schedule (owner, 2026-10-07)
+
+Two cycles a day, each length matched to the briefing it serves (in
+`run-cycle.sh`; `--hours` overrides):
+
+| fire | cycle | run_hours | covers through | product |
+|---|---|---|---|---|
+| 19:45 UTC (15:45 EDT) | 18Z | 28 h | 22Z the next day (6 PM EDT) | evening + the whole next flying day |
+| 07:45 UTC (03:45 EDT) | 06Z | 18 h | 00Z | morning |
+
+`wrf/launchd/org.mtwashingtonsoaring.wrf.plist` carries these fires (EDT
+mapping; EST lands one hour later in UTC and `latest` still selects the right
+cycle). Load with `camp-start.sh`, unload with `camp-stop.sh`.
+
+Timing expectation from the measured diurnal profile (~350 s/h overnight,
+~430–980 s/h in daylight — the 407 s/h 36-h average does **not** apply to
+these windows, each of which spans a different mix of cheap night and
+expensive daylight hours): the 28-h 18Z run ≈ 5 h of model time (ready
+~9:30–10 PM EDT including fetch and WPS); the 18-h 06Z run ≈ 3.5 h (ready
+~7:45–8 AM EDT).
+
+Disk: `wrfout` is kept **1 day** (the JSON products are what the site needs;
+`run.json`, logs and check PNGs persist 30 days), and `iofields_d02.txt` drops
+U, V, QCLOUD and the hydrometeors — roughly a third lighter per run. Check
+PNGs are named by valid datetime (`w3km_<cycle>_v<YYYY-MM-DDTHH>Z.png`); the
+old hour-of-day names collided across days in a 36-h run.
