@@ -3,10 +3,11 @@
  *
  *   node wrf/scripts/publish.mts <run-dir> [--only <file>]
  *
- * Uploads every top-level *.json artifact (map-field.json, cross-section-*.json,
- * run.json) with fixed paths, overwriting the previous cycle; run.json goes
- * LAST so a reader never sees a new stamp pointing at old data. `--only` is the
- * failure path: publish a single run.json and nothing else.
+ * Uploads the publishable artifacts (map-field.json, cross-section-*.json,
+ * run.json — never grid.json or anything else) with fixed paths, overwriting
+ * the previous cycle; run.json goes LAST so a reader never sees a new stamp
+ * pointing at old data. `--only` is the failure path: publish a single
+ * run.json and nothing else.
  *
  * The read-write token comes from wrf/.env (BLOB_READ_WRITE_TOKEN) and is never
  * printed.
@@ -35,8 +36,9 @@ if (!process.env.BLOB_READ_WRITE_TOKEN) {
 }
 
 const runDir = path.resolve(runDirArg);
+const PUBLISHABLE = /^(map-field\.json|run\.json|cross-section-\d{1,3}\.json)$/;
 let names = (await readdir(runDir, { withFileTypes: true }))
-  .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+  .filter((entry) => entry.isFile() && PUBLISHABLE.test(entry.name))
   .map((entry) => entry.name)
   .sort((a, b) => a.localeCompare(b));
 if (only) {
