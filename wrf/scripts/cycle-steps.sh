@@ -49,10 +49,12 @@ delete_gribs() { # pattern last_ff — drop the GRIBs the chunk has consumed
 }
 
 chunk_done() { # CS CE CSTART -> 0 when every met_em file for the chunk exists
-  local cs="$1" ce="$2" cstart="$3" t h missing=""
+  local cs="$1" ce="$2" cstart="$3" base t h missing=""
+  # Epoch arithmetic on purpose: GNU date mis-parses "… 12:00:00 + N hours".
+  base=$(date -u -d "${cstart/_/ }" +%s)
   h="$cs"
   while [ "$h" -le "$ce" ]; do
-    t=$(date -u -d "${cstart/_/ } + $((h - cs)) hours" +%Y-%m-%d_%H:%M:%S)
+    t=$(date -u -d "@$((base + (h - cs) * 3600))" +%Y-%m-%d_%H:%M:%S)
     { [ -f "met_em.d01.$t.nc" ] && [ -f "met_em.d02.$t.nc" ]; } || missing="$missing $t"
     h=$((h + 1))
   done
