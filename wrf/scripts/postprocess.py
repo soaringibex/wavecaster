@@ -4,6 +4,10 @@
 Emits, into the run directory (or --output-dir):
   map-field.json             247 locations × map levels × times (Open-Meteo layout)
   cross-section-<az>.json    one per 5° bucket: 15 transect points × 12 levels
+  wrf-wind.json              the WRF's own wind at the Glider Area, per frame, at
+                             800/825/775/850/750/700 hPa — the axis the site's
+                             cross-section and its caption must use in WRF mode
+                             (live soundings cannot speak for an archive)
   run.json                   cycle/init/length/wall-time/terrain/status
   checks/w3km_<cycle>_v<valid-datetime>.png  hourly W at 3 km ASL for human
                                              verification
@@ -234,6 +238,48 @@ def build_cross_sections(domain: WrfDomain, contract: dict, output_dir: Path) ->
     return written
 
 
+WIND_LEVELS_HPA = [800, 825, 775, 850, 750, 700]  # the site's waveAzimuth scan order
+
+
+def build_wind_series(domain: WrfDomain, contract: dict) -> dict:
+    """The WRF's own wind at the Glider Area, per frame.
+
+    The site orients the cross-section — and captions it — from this: the wind
+    that actually modelled the wave. (A live sounding can never speak for an
+    archive: it has no such hour, and clamping to "nearest available" produced
+    a line drawn along today's wind across yesterday's field.)
+    """
+    glat, glon = contract["glider_area"]
+    x, y = domain.points_xy(np.array([glat]), np.array([glon]))
+    times_local, offset = local_series(domain.times_utc)
+    directions: dict[int, list] = {h: [] for h in WIND_LEVELS_HPA}
+    speeds: dict[int, list] = {h: [] for h in WIND_LEVELS_HPA}
+    frame = 0
+    for path in domain.files:
+        with xr.open_dataset(path) as ds:
+            for ti in range(ds.sizes["Time"]):
+                stagger_u = ds["U"].values[ti]
+                stagger_v = ds["V"].values[ti]
+                u = 0.5 * (stagger_u[:, :, :-1] + stagger_u[:, :, 1:])
+                v = 0.5 * (stagger_v[:, :-1, :] + stagger_v[:, 1:, :])
+                p = domain.p[frame]
+                for h in WIND_LEVELS_HPA:
+                    uu = float(bilinear(interp_level(u, p, h * 100.0), x, y)[0])
+                    vv = float(bilinear(interp_level(v, p, h * 100.0), x, y)[0])
+                    if np.isfinite(uu) and np.isfinite(vv):
+                        directions[h].append(round((math.degrees(math.atan2(-uu, -vv)) + 360.0) % 360.0, 1))
+                        speeds[h].append(round(math.hypot(uu, vv), 2))
+                    else:
+                        directions[h].append(None)
+                        speeds[h].append(None)
+                frame += 1
+    levels = [
+        {"hPa": h, "wind_direction": directions[h], "wind_speed_ms": speeds[h]}
+        for h in WIND_LEVELS_HPA
+    ]
+    return {"schema": 1, "utc_offset_seconds": offset, "times": times_local, "levels": levels}
+
+
 def write_run_json(domain: WrfDomain, output_dir: Path, cycle: str, wall_seconds: int | None) -> Path:
     sx, sy = domain.points_xy(np.array([GORHAM_SUMMIT[0]]), np.array([GORHAM_SUMMIT[1]]))
     summit_hgt = float(np.atleast_1d(bilinear(domain.hgt, sx, sy))[0])
@@ -305,6 +351,10 @@ def main() -> int:
 
     cross = build_cross_sections(domain, contract, output_dir)
     print(f"cross-section files: {len(cross)}")
+
+    wind = build_wind_series(domain, contract)
+    (output_dir / "wrf-wind.json").write_text(json.dumps(wind, separators=(",", ":")))
+    print(f"wrf-wind.json: {len(wind['levels'])} levels × {len(wind['times'])} times at the Glider Area")
 
     run_json = write_run_json(domain, output_dir, args.cycle, args.wall_seconds)
     print(f"run.json: {run_json.read_text().strip()}")

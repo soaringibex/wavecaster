@@ -36,7 +36,7 @@ if (!process.env.BLOB_READ_WRITE_TOKEN) {
 }
 
 const runDir = path.resolve(runDirArg);
-const PUBLISHABLE = /^(map-field\.json|run\.json|cross-section-\d{1,3}\.json)$/;
+const PUBLISHABLE = /^(map-field\.json|wrf-wind\.json|run\.json|cross-section-\d{1,3}\.json)$/;
 let names = (await readdir(runDir, { withFileTypes: true }))
   .filter((entry) => entry.isFile() && PUBLISHABLE.test(entry.name))
   .map((entry) => entry.name)
