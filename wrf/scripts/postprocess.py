@@ -92,7 +92,8 @@ def interp_level(field: np.ndarray, p: np.ndarray, target_pa: float) -> np.ndarr
     p1 = p[k1c, yy, xx]
     f0 = field[k0, yy, xx]
     f1 = field[k1c, yy, xx]
-    wgt = np.where(p1 != p0, (target_pa - p0) / (p1 - p0), 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        wgt = np.where(p1 != p0, (target_pa - p0) / (p1 - p0), 0.0)
     return np.where(valid, f0 + wgt * (f1 - f0), np.nan)
 
 
@@ -109,7 +110,8 @@ def interp_height(field: np.ndarray, z: np.ndarray, target_m: float) -> np.ndarr
     z1 = z[k1c, yy, xx]
     f0 = field[k0, yy, xx]
     f1 = field[k1c, yy, xx]
-    wgt = np.where(z1 != z0, (target_m - z0) / (z1 - z0), 0.0)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        wgt = np.where(z1 != z0, (target_m - z0) / (z1 - z0), 0.0)
     return np.where(valid, f0 + wgt * (f1 - f0), np.nan)
 
 

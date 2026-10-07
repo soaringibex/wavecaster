@@ -189,6 +189,13 @@ print(ds.sizes['num_metgrid_levels'], int(ds.attrs['NUM_METGRID_SOIL_LEVELS']))
 wrf)
   # wrf HOURS
   HOURS="$1"
+  # Resume guard: a complete run (final wrfout + the model's own SUCCESS line) is
+  # skipped, so a killed orchestrator never costs a 4-hour re-run. Delete rsl.*
+  # and the wrfout files to force one.
+  if ls wrfout_d02_* >/dev/null 2>&1 && grep -q "SUCCESS COMPLETE WRF" rsl.error.0000 2>/dev/null; then
+    echo "complete wrfout present (SUCCESS COMPLETE WRF in rsl.error.0000) — skipping the run"
+    exit 0
+  fi
   rm -f rsl.*
   t0=$(date +%s)
   mpirun -np 10 ./wrf.exe > logs/wrf.log 2>&1

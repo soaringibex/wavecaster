@@ -127,3 +127,15 @@ docker run --rm -v "$PWD/wrf:/wrf" mtw-wrf:4.6.1 wrf.exe    # must print 'nameli
 docker run --rm mtw-wrf:4.6.1 nproc                          # 14 visible cores
 docker run --rm mtw-wrf:4.6.1 mpirun -np 10 hostname         # runs as root: OMPI_ALLOW_* are baked in
 ```
+
+## Measured — 2026-10-06 12Z case (36 h, mtw-wrf:4.6.1, mpirun -np 10)
+
+- WPS per 12–13-time chunk: ungrib NAT ~29 s/time, ungrib SOIL ~2 s/time,
+  metgrid ~25 s/time; real.exe (37 times) ~20 s.
+- **wrf.exe 36 h: 14,657 s = 407.1 s per forecast hour** (4 h 04 m), 0 CFL
+  warnings, frames exact (d01 37 hourly, d02 145 at 15 min). Cost is strongly
+  diurnal: ~350 s/h overnight, ~800–980 s/h in daylight (RRTMG radiative work),
+  so the 6-h daytime smoke's 521 s/h was a high-water sample, not the average.
+- postprocess (145 frames, 72 cross-sections, 37 check PNGs): ~5 min.
+- fetch: 37 × ~660 MB NAT (~24 GB) + ~1 GB soil subsets — ~35 min on the home link.
+- Full cycle wall on the MacBook: ~5–5.5 h (fetch + WPS + run + postprocess).
