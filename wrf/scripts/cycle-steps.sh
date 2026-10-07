@@ -45,6 +45,8 @@ prepare)
   ln -sf /opt/WPS/metgrid/src/metgrid.exe .
   ln -sf /opt/WRF/main/real.exe .
   ln -sf /opt/WRF/main/wrf.exe .
+  # RRTMG's greenhouse-gas input (ghg_input=1) is read from the run directory
+  cp -f /opt/WRF/run/CAMtr_volume_mixing_ratio* . 2>/dev/null || true
   sed -i "s/^ start_date = .*/ start_date = '$START_ISO','$START_ISO',/" namelist.wps
   sed -i "s/^ end_date   = .*/ end_date   = '$END_ISO','$END_ISO',/" namelist.wps
   sed -i "s/^ start_year = .*/ start_year = $SY, $SY,/" namelist.input
