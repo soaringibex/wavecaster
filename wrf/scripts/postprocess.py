@@ -35,10 +35,11 @@ LOCAL_TZ = ZoneInfo("America/New_York")
 
 
 def decode_times(ds: xr.Dataset) -> list[datetime]:
-    """wrfout Time is a 19-char array ("2026-10-06_12:00:00"), not datetime64."""
-    raw = ds["Time"].values
-    if getattr(raw.dtype, "kind", None) == "M":
-        return [np.datetime64(x, "s").astype(datetime).replace(tzinfo=timezone.utc) for x in raw]
+    """wrfout Times is a 19-char array ("2026-10-06_12:00:00"), not datetime64.
+
+    (`Time`, singular, is the raw hours-since-init counter — not what we want.)
+    """
+    raw = ds["Times"].values
     out = []
     for row in raw:
         text = "".join(c.decode() if isinstance(c, bytes) else str(c) for c in np.atleast_1d(row))
@@ -152,8 +153,8 @@ class WrfDomain:
         import wrf
 
         xy = np.asarray(wrf.ll_to_xy(self._nc, latitude=lats, longitude=lons, as_int=False))
-        x = xy[0].astype(float)
-        y = xy[1].astype(float)
+        x = np.atleast_1d(np.asarray(xy[0], dtype=float))
+        y = np.atleast_1d(np.asarray(xy[1], dtype=float))
         if np.any(x < 0) or np.any(y < 0):
             raise SystemExit("a sample point falls outside the d02 domain")
         return x, y
@@ -235,7 +236,7 @@ def build_cross_sections(domain: WrfDomain, contract: dict, output_dir: Path) ->
 
 def write_run_json(domain: WrfDomain, output_dir: Path, cycle: str, wall_seconds: int | None) -> Path:
     sx, sy = domain.points_xy(np.array([GORHAM_SUMMIT[0]]), np.array([GORHAM_SUMMIT[1]]))
-    summit_hgt = float(bilinear(domain.hgt, sx, sy)[0])
+    summit_hgt = float(np.atleast_1d(bilinear(domain.hgt, sx, sy))[0])
     payload = {
         "schema": 1,
         "cycle": cycle,
