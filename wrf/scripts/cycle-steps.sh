@@ -18,17 +18,46 @@ export OMP_NUM_THREADS=1
 mkdir -p logs
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
+grib_ff() { # path -> the two-digit forecast hour in the filename
+  basename "$1" | sed -E 's/.*f([0-9]{2})\.grib2$/\1/'
+}
+
 link_range() { # pattern first_ff last_ff  -> prints the linked count
-  local pattern="$1" first="$2" last="$3"
-  local i=0
+  local pattern="$1" first="$2" last="$3" f ff i=0
   rm -f GRIBFILE.*
-  for f in $(find grib -name "$pattern" | sort | sed -n "$((first + 1)),$((last + 1))p"); do
+  for f in $(find grib -name "$pattern" | sort); do
+    ff=$(grib_ff "$f")
+    [ -n "$ff" ] || { echo "unparsable GRIB name: $f" >&2; exit 1; }
+    # Select by forecast hour, not by position: earlier chunks delete their
+    # GRIBs, so positions shift between runs.
+    [ "$((10#$ff))" -ge "$first" ] || continue
+    [ "$((10#$ff))" -le "$last" ] || continue
     printf -v c2 '%b' "\\$(printf '%03o' $((65 + i / 26)))"
     printf -v c3 '%b' "\\$(printf '%03o' $((65 + i % 26)))"
     ln -sf "$(readlink -f "$f")" "GRIBFILE.A${c2}${c3}"
     i=$((i + 1))
   done
   echo "$i"
+}
+
+delete_gribs() { # pattern last_ff — drop the GRIBs the chunk has consumed
+  local pattern="$1" last="$2" f ff
+  for f in $(find grib -name "$pattern" | sort); do
+    ff=$(grib_ff "$f")
+    [ -n "$ff" ] && [ "$((10#$ff))" -le "$last" ] && rm -f "$f"
+  done
+}
+
+chunk_done() { # CS CE CSTART -> 0 when every met_em file for the chunk exists
+  local cs="$1" ce="$2" cstart="$3" t h missing=""
+  h="$cs"
+  while [ "$h" -le "$ce" ]; do
+    t=$(date -u -d "${cstart/_/ } + $((h - cs)) hours" +%Y-%m-%d_%H:%M:%S)
+    { [ -f "met_em.d01.$t.nc" ] && [ -f "met_em.d02.$t.nc" ]; } || missing="$missing $t"
+    h=$((h + 1))
+  done
+  [ -z "$missing" ] || { echo "missing met_em:$missing"; return 1; }
+  return 0
 }
 
 case "$SUB" in
@@ -73,6 +102,15 @@ chunk)
   YYYYMMDD="$1" HH="$2" CS="$3" CE="$4" CSTART="$5" CEND="$6"
   EXPECT=$((CE - CS + 1))
 
+  # Resume: a chunk whose met_em files all exist is already done (its GRIBs may
+  # be gone). This is what makes a re-run after a mid-cycle failure cheap.
+  if chunk_done "$CS" "$CE" "$CSTART"; then
+    echo "chunk $CS..$CE already complete — skipping"
+    delete_gribs "hrrr.t${HH}z.wrfnatf*.grib2" "$CE"
+    delete_gribs "hrrr.t${HH}z.soilf*.grib2" "$CE"
+    exit 0
+  fi
+
   n=$(link_range "hrrr.t${HH}z.wrfnatf*.grib2" "$CS" "$CE")
   log "chunk $CS..$CE: linked $n NAT files (expect $EXPECT)"
   [ "$n" -eq "$EXPECT" ] || exit 1
@@ -90,13 +128,15 @@ chunk)
   sed -i "s/^ start_date = .*/ start_date = '$CSTART','$CSTART',/" namelist.wps
   sed -i "s/^ end_date   = .*/ end_date   = '$CEND','$CEND',/" namelist.wps
   ./metgrid.exe > "logs/metgrid-$CS-$CE.log" 2>&1 || { tail -8 "logs/metgrid-$CS-$CE.log"; exit 1; }
-  log "chunk $CS..$CE: met_em now $(ls met_em.* 2>/dev/null | wc -l) files"
   grep -q "Successful completion" "logs/metgrid-$CS-$CE.log" || { tail -8 "logs/metgrid-$CS-$CE.log"; exit 1; }
+  chunk_done "$CS" "$CE" "$CSTART" || { echo "chunk $CS..$CE incomplete after metgrid"; exit 1; }
+  log "chunk $CS..$CE: met_em complete ($(ls met_em.d01.* 2>/dev/null | wc -l) times so far)"
+  python /wrf/scripts/check-met-em.py . --times "$(ls met_em.d01.* 2>/dev/null | wc -l)" || exit 1
 
   # Free the chunk's intermediates and GRIBs (met_em keeps everything forward)
   rm -f NAT:* SOIL:*
-  find grib -name "hrrr.t${HH}z.wrfnatf*.grib2" | sort | sed -n "1,$((CE + 1))p" | xargs -r rm -f
-  find grib -name "hrrr.t${HH}z.soilf*.grib2" | sort | sed -n "1,$((CE + 1))p" | xargs -r rm -f
+  delete_gribs "hrrr.t${HH}z.wrfnatf*.grib2" "$CE"
+  delete_gribs "hrrr.t${HH}z.soilf*.grib2" "$CE"
   log "chunk $CS..$CE: intermediates and GRIBs cleaned"
   ;;
 
