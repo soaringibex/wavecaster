@@ -5,7 +5,12 @@
 #   wrf/scripts/camp-stop.sh
 #
 # Prints every change it makes. pmset needs root (password prompt).
+# macOS-only: on a Linux server there is nothing to unload (see README, Linux).
 set -u
+if [ "$(uname)" != "Darwin" ]; then
+  echo "camp-stop.sh is macOS-only (pmset + launchd). On a Linux server, remove the cron lines instead."
+  exit 1
+fi
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SAVED="$ROOT/wrf/out/camp-pmset.saved"
 

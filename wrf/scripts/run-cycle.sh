@@ -16,12 +16,29 @@ WRF_DIR="$ROOT/wrf"
 IMAGE="mtw-wrf:4.6.1"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
-# Sleep-proofing: every entry point (terminal, launchd, camp) runs the cycle
-# under caffeinate, so a long run can never be suspended mid-model.
+# Sleep-proofing: every entry point (terminal, launchd, cron) runs the cycle
+# under caffeinate when the host has it (macOS); a Linux server never sleeps.
 if [ -z "${WRF_CAFFEINATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
   export WRF_CAFFEINATED=1
   exec caffeinate -i "$0" "$@"
 fi
+
+# One date dialect per host: BSD date on macOS, GNU date on Linux.
+if date -j -u -f "%Y-%m-%d" "2026-01-01" +%s >/dev/null 2>&1; then
+  DATE_BSD=1
+else
+  DATE_BSD=0
+fi
+fmt_epoch() { # <epoch> <format>
+  if [ "$DATE_BSD" -eq 1 ]; then date -j -u -r "$1" "+$2"; else date -u -d "@$1" "+$2"; fi
+}
+epoch_of() { # "YYYY-MM-DD_HH:MM:SS" -> epoch
+  if [ "$DATE_BSD" -eq 1 ]; then
+    date -j -u -f "%Y-%m-%d_%H:%M:%S" "$1" +%s
+  else
+    date -u -d "${1/_/ }" +%s
+  fi
+}
 
 HOURS=""   # decided per cycle below unless --hours overrides
 CHUNK_HOURS=12
@@ -64,7 +81,8 @@ fi
 
 CYCLE_ID="${CYCLE_DATE}T${CYCLE_HOUR}Z"
 
-if pmset -g batt | grep -q "Battery Power"; then
+# Battery gate: macOS only (a Linux server has no battery and no pmset).
+if command -v pmset >/dev/null 2>&1 && pmset -g batt | grep -q "Battery Power"; then
   echo "refusing to start: running on battery"
   exit 3
 fi
@@ -80,17 +98,17 @@ CYCLE_DIR="$WRF_DIR/out/$CYCLE_ID"
 mkdir -p "$CYCLE_DIR/logs"
 
 START_ISO="${CYCLE_DATE:0:4}-${CYCLE_DATE:4:2}-${CYCLE_DATE:6:2}_${CYCLE_HOUR}:00:00"
-START_EPOCH=$(date -j -u -f "%Y-%m-%d_%H:%M:%S" "$START_ISO" +%s)
+START_EPOCH=$(epoch_of "$START_ISO")
 END_EPOCH=$((START_EPOCH + HOURS * 3600))
-END_ISO=$(date -j -u -r "$END_EPOCH" +"%Y-%m-%d_%H:%M:%S")
-SY=$(date -j -u -r "$START_EPOCH" +%Y)
-SM=$(date -j -u -r "$START_EPOCH" +%m)
-SD=$(date -j -u -r "$START_EPOCH" +%d)
-SH=$(date -j -u -r "$START_EPOCH" +%H)
-EY=$(date -j -u -r "$END_EPOCH" +%Y)
-EM=$(date -j -u -r "$END_EPOCH" +%m)
-ED=$(date -j -u -r "$END_EPOCH" +%d)
-EH=$(date -j -u -r "$END_EPOCH" +%H)
+END_ISO=$(fmt_epoch "$END_EPOCH" "%Y-%m-%d_%H:%M:%S")
+SY=$(fmt_epoch "$START_EPOCH" "%Y")
+SM=$(fmt_epoch "$START_EPOCH" "%m")
+SD=$(fmt_epoch "$START_EPOCH" "%d")
+SH=$(fmt_epoch "$START_EPOCH" "%H")
+EY=$(fmt_epoch "$END_EPOCH" "%Y")
+EM=$(fmt_epoch "$END_EPOCH" "%m")
+ED=$(fmt_epoch "$END_EPOCH" "%d")
+EH=$(fmt_epoch "$END_EPOCH" "%H")
 
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 
@@ -155,6 +173,9 @@ PY
 log "cycle $CYCLE_ID, ${HOURS} h, chunks up to ${CHUNK_HOURS} h"
 
 AVAIL_GB=$(df -g "$WRF_DIR" 2>/dev/null | awk 'NR==2{print $4}')
+if [ -z "$AVAIL_GB" ]; then  # GNU df has no -g
+  AVAIL_GB=$(df -BG --output=avail "$WRF_DIR" 2>/dev/null | awk 'NR==2{gsub(/G/,"");print}')
+fi
 if [ -n "${AVAIL_GB:-}" ] && [ "$AVAIL_GB" -lt 60 ]; then
   echo "refusing to start: only ${AVAIL_GB} GB free under $WRF_DIR (need >= 60)"
   exit 5
@@ -175,8 +196,8 @@ CS=0
 while [ "$CS" -le "$HOURS" ]; do
   CE=$((CS + CHUNK_HOURS))
   [ "$CE" -gt "$HOURS" ] && CE="$HOURS"
-  CSTART=$(date -j -u -r "$((START_EPOCH + CS * 3600))" +"%Y-%m-%d_%H:%M:%S")
-  CEND=$(date -j -u -r "$((START_EPOCH + CE * 3600))" +"%Y-%m-%d_%H:%M:%S")
+  CSTART=$(fmt_epoch "$((START_EPOCH + CS * 3600))" "%Y-%m-%d_%H:%M:%S")
+  CEND=$(fmt_epoch "$((START_EPOCH + CE * 3600))" "%Y-%m-%d_%H:%M:%S")
   step "chunk-${CS}-${CE}" "bash /wrf/scripts/cycle-steps.sh chunk $CYCLE_DATE $CYCLE_HOUR $CS $CE $CSTART $CEND" || fail
   CS=$((CE + 1))
 done

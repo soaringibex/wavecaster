@@ -1,12 +1,18 @@
 #!/bin/bash
 # Camp mode ON: save the current pmset state, keep the machine awake on AC, and
-# load the launchd schedule (00Z and 06Z HRRR cycles, 01:45/07:45 UTC).
+# load the launchd schedule (18Z and 06Z HRRR cycles, 19:45/07:45 UTC).
 #
 #   wrf/scripts/camp-start.sh
 #
 # pmset needs root, so you will be asked for your password. camp-stop.sh
 # restores exactly the sleep/disablesleep values this script replaced.
+# macOS-only: on a Linux server use cron instead (README, Linux section).
 set -u
+if [ "$(uname)" != "Darwin" ]; then
+  echo "camp-start.sh is macOS-only (pmset + launchd)."
+  echo "On a Linux server, schedule wrf/scripts/run-cycle.sh with cron — see the README's Linux section."
+  exit 1
+fi
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 PLIST_SRC="$ROOT/wrf/launchd/org.mtwashingtonsoaring.wrf.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/org.mtwashingtonsoaring.wrf.plist"

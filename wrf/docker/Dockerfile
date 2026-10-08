@@ -54,12 +54,20 @@ RUN echo "b8ec11b240a3cf1274b2bd609700191c6ec84628e4c991d3ab562ce9dc50b5f2  /tmp
  && mv /opt/WRFV4.6.1 /opt/WRF \
  && rm /tmp/WRF-4.6.1.tar.gz
 
-# Option 7 = "Linux armv7l aarch64, gnu OpenMPI" (dmpar); nesting = 1 (basic).
-# GNU 13 on arm64 needs -fallow-argument-mismatch and -fallow-invalid-boz
-# appended to the Fortran base options.
+# The WRF configure menu is filtered by `uname -m`, so the GNU dmpar entry has
+# a different number per arch — read off WRF's own menus: 7 on aarch64
+# ("Linux armv7l aarch64, gnu OpenMPI"), 34 on x86_64 ("Linux x86_64, gnu
+# compiler (dmpar)"). Nesting = 1 (basic). GNU 13 on arm64 needs
+# -fallow-argument-mismatch and -fallow-invalid-boz appended to the Fortran
+# base options (unused on x86_64, harmless there).
 RUN set -o pipefail \
  && cd /opt/WRF && export NETCDF=/usr \
- && printf '7\n1\n' | timeout 180 ./configure \
+ && case "$(uname -m)" in \
+      aarch64) WRF_CONFIG=7 ;; \
+      x86_64)  WRF_CONFIG=34 ;; \
+      *) echo "unsupported build arch: $(uname -m)" >&2; exit 1 ;; \
+    esac \
+ && printf '%s\n1\n' "$WRF_CONFIG" | timeout 180 ./configure \
  && sed -i 's/^\(FCBASEOPTS_NO_G[[:space:]]*=.*\)$/\1 -fallow-argument-mismatch -fallow-invalid-boz/' configure.wrf \
  && grep -n "fallow-argument-mismatch" configure.wrf \
  && ./compile -j 8 em_real 2>&1 | tee /opt/WRF/compile.log | tail -40 \
@@ -104,11 +112,16 @@ RUN cd /opt/convert_geotiff \
  && test -x convert_geotiff
 
 # ------------------------------------ Python 3.12 layer (conda-forge binaries)
-# wrf-python has no pip sdist that builds on Python 3.12 / arm64; conda-forge
-# ships linux-aarch64 binaries (1.4.2 — same API: destagger, to_np,
-# interplevel). Everything else is the same pinned stack.
-COPY src/micromamba-2.9.0-linux-aarch64 /usr/local/bin/micromamba
-RUN chmod +x /usr/local/bin/micromamba && /usr/local/bin/micromamba --version \
+# wrf-python has no pip sdist that builds on Python 3.12; conda-forge ships
+# platform binaries (1.4.2 — same API: destagger, to_np, interplevel). The
+# micromamba 2.9.0 binary in src/ matches the build host — aarch64 on the
+# MacBook, x86_64 on a Linux server (same release asset, renamed); this picks
+# whichever is present. Everything else is the same pinned stack.
+COPY src/micromamba-2.9.0-linux-* /tmp/micromamba/
+RUN MAMBA_ARCH=$( [ "$(uname -m)" = "aarch64" ] && echo aarch64 || echo x86_64 ) \
+ && mv "/tmp/micromamba/micromamba-2.9.0-linux-${MAMBA_ARCH}" /usr/local/bin/micromamba \
+ && rm -rf /tmp/micromamba \
+ && chmod +x /usr/local/bin/micromamba && /usr/local/bin/micromamba --version \
  && MAMBA_ROOT_PREFIX=/opt/mamba /usr/local/bin/micromamba create -y -p /opt/venv \
       -c conda-forge --channel-priority strict \
       "python=3.12" "wrf-python=1.4.2" xarray netCDF4 scipy matplotlib rasterio boto3 herbie-data 2>&1 | tail -12 \

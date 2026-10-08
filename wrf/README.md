@@ -178,3 +178,33 @@ PNGs are named by valid datetime (`w3km_<cycle>_v<YYYY-MM-DDTHH>Z.png`); the
 old hour-of-day names collided across days in a 36-h run. A `KEEP` file inside
 a cycle directory pins it — the retention pass skips it entirely (wrfout,
 met_em, and the 30-day directory sweep).
+
+## Running on a Linux server (port notes)
+
+The pipeline is host-portable; what differs on x86_64 Linux:
+
+- **`wrf/docker/src/`** (gitignored): copy it from the Mac, then swap the
+  micromamba binary for the x86_64 build of the same release — micromamba
+  2.9.0 from `mamba-org/micromamba-releases`, asset `micromamba-linux-64`,
+  saved as `src/micromamba-2.9.0-linux-x86_64` — and add its sha256 to
+  `SHA256SUMS`. `build.sh` detects the host arch, and the Dockerfile selects
+  WRF's own configure entry per arch (7 = aarch64 "gnu OpenMPI", 34 = x86_64
+  "gnu compiler (dmpar)" — both read off WRF 4.6.1's arch-filtered menus).
+- **Host scripts are portable as-is**: `run-cycle.sh` picks BSD/GNU `date`
+  per host, skips the battery gate where `pmset` is absent, and falls back
+  from `df -g` to GNU `df`; `caffeinate` is a no-op where missing;
+  `camp-start/stop.sh` refuse cleanly off macOS.
+- **MPI ranks**: `export WRF_NP=16` (or the physical core count) before
+  `run-cycle.sh` — the default 10 is the MacBook's performance cores.
+- **Prerequisites**: docker, git, bash, node ≥ 20.12, python3.
+- **Schedule with cron** (a server runs UTC — no launchd, no sleep
+  management, no battery gate):
+
+```cron
+45 19 * * * /path/to/wavecaster/wrf/scripts/run-cycle.sh latest >> /path/to/wavecaster/wrf/out/logs/cron.log 2>&1
+45 7  * * * /path/to/wavecaster/wrf/scripts/run-cycle.sh latest >> /path/to/wavecaster/wrf/out/logs/cron.log 2>&1
+```
+
+`wrf/.env` carries the one line the publisher needs
+(`BLOB_READ_WRITE_TOKEN=…`); everything else — fetch, chunks, retention,
+publish — behaves exactly as on the Mac.

@@ -14,6 +14,9 @@ set -u
 SUB="$1"
 shift
 ulimit -s unlimited 2>/dev/null || true
+# MPI ranks for real.exe/wrf.exe: 10 = the MacBook's performance cores. On
+# another host, export WRF_NP (e.g. WRF_NP=16 on the 16-core 9950X) before
+# invoking run-cycle.sh.
 export OMP_NUM_THREADS=1
 mkdir -p logs
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
@@ -174,7 +177,7 @@ print(ds.sizes['num_metgrid_levels'], int(ds.attrs['NUM_METGRID_SOIL_LEVELS']))
   grep -E "p_top_requested|num_metgrid|run_hours" namelist.input
   rm -f rsl.*
   t0=$(date +%s)
-  mpirun -np 10 ./real.exe > logs/real.log 2>&1
+  mpirun -np "${WRF_NP:-10}" ./real.exe > logs/real.log 2>&1
   rc=$?
   log "real rc=$rc in $(( $(date +%s) - t0 ))s"
   grep -m2 "Assume RUC LSM" rsl.error.0000 2>/dev/null || echo "  (no 'Assume RUC LSM' line found!)"
@@ -198,7 +201,7 @@ wrf)
   fi
   rm -f rsl.*
   t0=$(date +%s)
-  mpirun -np 10 ./wrf.exe > logs/wrf.log 2>&1
+  mpirun -np "${WRF_NP:-10}" ./wrf.exe > logs/wrf.log 2>&1
   rc=$?
   wall=$(( $(date +%s) - t0 ))
   log "wrf rc=$rc, wall ${wall}s for ${HOURS} h ($(awk -v w="$wall" -v h="$HOURS" 'BEGIN{printf "%.1f", w/h}') s per forecast hour)"
