@@ -196,7 +196,9 @@ The pipeline is host-portable; what differs on x86_64 Linux:
   `camp-start/stop.sh` refuse cleanly off macOS.
 - **MPI ranks**: `export WRF_NP=16` (or the physical core count) before
   `run-cycle.sh` — the default 10 is the MacBook's performance cores.
-- **Prerequisites**: docker, git, bash, node ≥ 20.12, python3.
+- **Prerequisites**: docker, git, bash, node ≥ 20.12, python3, and one
+  `npm install` in the repo root (the publish/export-grid scripts import
+  `@vercel/blob` from there).
 - **Schedule with cron** (a server runs UTC — no launchd, no sleep
   management, no battery gate):
 
