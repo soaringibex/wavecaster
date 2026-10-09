@@ -1,0 +1,16 @@
+[Unit]
+Description=Mt Washington WRF 1 km wave-forecast cycle
+Documentation=file://%h/wavecaster/wrf/README.md
+
+[Service]
+Type=oneshot
+Environment=WRF_NP=16
+# A cycle killed by the timeout leaves its lock directory behind; clear it so
+# the next fire is not refused. The lock still protects against overlapping
+# manual runs while a cycle is live.
+ExecStartPre=/bin/rm -rf %h/wavecaster/wrf/out/.lock
+ExecStart=%h/wavecaster/wrf/scripts/run-cycle.sh latest
+# The 28-h evening cycle runs ~3 h of model time plus fetch/WPS; 4h30m leaves
+# headroom while killing a hung run before the next fire.
+TimeoutStartSec=4h30min
+# No CPUAffinity: the run uses all 16 physical cores.

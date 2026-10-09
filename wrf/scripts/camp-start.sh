@@ -1,19 +1,46 @@
 #!/bin/bash
-# Camp mode ON: save the current pmset state, keep the machine awake on AC, and
-# load the launchd schedule (18Z and 06Z HRRR cycles, 19:45/07:45 UTC).
+# Camp mode ON. macOS: save the current pmset state, keep the machine awake on
+# AC, and load the launchd schedule. Linux: install the systemd user units and
+# enable the timer. Either way the fires are the 18Z and 06Z HRRR cycles at
+# 19:45/07:45 UTC.
 #
 #   wrf/scripts/camp-start.sh
 #
-# pmset needs root, so you will be asked for your password. camp-stop.sh
+# macOS pmset needs root, so you will be asked for your password; camp-stop.sh
 # restores exactly the sleep/disablesleep values this script replaced.
-# macOS-only: on a Linux server use cron instead (README, Linux section).
+# Linux timers need user lingering to fire while logged out (admin to-do;
+# camp-start.sh warns when linger is off — it cannot enable it itself).
 set -u
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+if [ "$(uname)" = "Linux" ]; then
+  UNITS_SRC="$ROOT/wrf/systemd"
+  UNITS_DST="$HOME/.config/systemd/user"
+  echo "== camp-start =="
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "camp-start.sh: no systemctl on this host" >&2
+    exit 1
+  fi
+  mkdir -p "$UNITS_DST"
+  cp -f "$UNITS_SRC/wavecaster.service" "$UNITS_SRC/wavecaster.timer" "$UNITS_DST/"
+  systemctl --user daemon-reload
+  systemctl --user enable --now wavecaster.timer
+  echo "enabled: wavecaster.timer (fires 07:45 and 19:45 UTC)"
+  systemctl --user list-timers wavecaster.timer --no-pager | sed 's/^/  /'
+  if ! loginctl show-user "$USER" -p Linger 2>/dev/null | grep -q "Linger=yes"; then
+    echo
+    echo "WARNING: user lingering is OFF — the timer only fires while this account"
+    echo "is logged in. Ask the admin to run:  loginctl enable-linger $USER"
+  fi
+  echo "camp mode ON — run-cycle.sh latest picks 06Z at 07:45 and 18Z at 19:45."
+  exit 0
+fi
+
 if [ "$(uname)" != "Darwin" ]; then
-  echo "camp-start.sh is macOS-only (pmset + launchd)."
-  echo "On a Linux server, schedule wrf/scripts/run-cycle.sh with cron — see the README's Linux section."
+  echo "camp-start.sh supports macOS (pmset + launchd) and Linux (systemd --user)." >&2
   exit 1
 fi
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
 PLIST_SRC="$ROOT/wrf/launchd/org.mtwashingtonsoaring.wrf.plist"
 PLIST_DST="$HOME/Library/LaunchAgents/org.mtwashingtonsoaring.wrf.plist"
 SAVED="$ROOT/wrf/out/camp-pmset.saved"

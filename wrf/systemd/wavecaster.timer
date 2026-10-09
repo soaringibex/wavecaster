@@ -1,0 +1,15 @@
+[Unit]
+Description=Fire the WRF cycle at 07:45 and 19:45 UTC
+
+[Timer]
+OnCalendar=*-*-* 07:45:00 UTC
+OnCalendar=*-*-* 19:45:00 UTC
+# A catch-up run after a missed slot would pick the wrong cycle: run-cycle.sh
+# latest floors the current UTC hour, so an 08:30 fire would still select the
+# 06Z cycle and could collide with the next scheduled run. A skipped cycle is
+# the intended failure.
+Persistent=false
+Unit=wavecaster.service
+
+[Install]
+WantedBy=timers.target
