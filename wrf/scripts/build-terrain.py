@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Mosaic the USGS 3DEP 1-arcsecond tiles and convert them to WPS geog tiles.
 
-Runs inside the image (rasterio + convert_geotiff on PATH). Writes:
+Runs inside the image (rasterio + convert_geotiff on PATH) and only ever reads
+the local tile directory — it does not download anything. Writes:
   /wrf/geog/usgs_1s_mosaic.tif   merged 1″ elevation (overwritten each run)
   /wrf/geog/usgs_1s/             geogrid index + tiles, referenced by the
                                  HGT_M usgs_1s entry in wrf/wps/GEOGRID.TBL
+
+A host that already carries a full convert_geotiff output set (mosaic + index +
+tiles) in this script's format is reused as-is; pass --force to regenerate it
+from the local tiles.
 
 Coverage: USGS tiles are named by their NORTH-WEST corner, so the demanded
 43.5–45.0 N / 72.5–70.0 W window (plus margin to tile edges) is
@@ -23,6 +28,7 @@ Two anomalies are handled explicitly here:
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -93,6 +99,39 @@ def build_mosaic() -> Path:
     return MOSAIC
 
 
+def read_index_georef(text: str) -> tuple[float, float, float, float]:
+    """(known_lat, known_lon, dx, dy) from a geogrid index, or SystemExit."""
+    values = {}
+    for key in ("known_lat", "known_lon", "dx", "dy"):
+        match = re.search(rf"^{key} = ([-\d.eE]+)", text, flags=re.M)
+        if not match:
+            raise SystemExit(f"index is missing {key}")
+        values[key] = float(match.group(1))
+    return values["known_lat"], values["known_lon"], values["dx"], values["dy"]
+
+
+def index_matches_mosaic(index_path: Path, mosaic: Path) -> bool:
+    """True when an existing convert_geotiff output already matches this
+    script's format: the index parses, its georeference agrees with the
+    mosaic's own transform (the same assertion patch_index makes), and tiles
+    are present. Lets a prepared host reuse the Mac-built terrain instead of
+    re-running the tool."""
+    if not (index_path.exists() and mosaic.exists() and OUT_DIR.is_dir()):
+        return False
+    try:
+        lat, lon, dx, dy = read_index_georef(index_path.read_text())
+        with rasterio.open(mosaic) as ds:
+            left, top = ds.transform.c, ds.transform.f
+            res_x, res_y = ds.transform.a, -ds.transform.e
+    except (SystemExit, OSError, ValueError):
+        return False
+    if abs(lat - top) > 1e-4 or abs(lon - left) > 1e-4:
+        return False
+    if abs(dx - res_x) > 1e-9 or abs(dy - res_y) > 1e-9:
+        return False
+    return any(p.name[:1].isdigit() for p in OUT_DIR.iterdir())
+
+
 def patch_index(index_path: Path, mosaic: Path) -> None:
     """Repair the georeference convert_geotiff gets wrong.
 
@@ -107,8 +146,7 @@ def patch_index(index_path: Path, mosaic: Path) -> None:
         left, top = ds.transform.c, ds.transform.f
         res_x, res_y = ds.transform.a, -ds.transform.e
     text = index_path.read_text()
-    lat = float(re.search(r"known_lat = ([-\d.eE]+)", text).group(1))
-    lon = float(re.search(r"known_lon = ([-\d.eE]+)", text).group(1))
+    lat, lon, _, _ = read_index_georef(text)
     if abs(lat - top) > 1e-4 or abs(lon - left) > 1e-4:
         raise SystemExit(
             f"index origin ({lat}, {lon}) disagrees with the mosaic transform ({top}, {left})"
@@ -121,8 +159,38 @@ def patch_index(index_path: Path, mosaic: Path) -> None:
     print(f"index georeference corrected: dx={res_x:.9e} dy={res_y:.9e} origin=({lat:.6f},{lon:.6f})")
 
 
+def ensure_geog_symlink() -> None:
+    # WPS resolves rel_path entries under geog_data_path (= /wrf/geog/WPS_GEOG),
+    # while the converted tiles live at /wrf/geog/usgs_1s per the plan — a
+    # symlink gives WPS the layout it needs without duplicating the tiles.
+    link = ROOT / "geog" / "WPS_GEOG" / "usgs_1s"
+    if not link.exists():
+        link.symlink_to(OUT_DIR)
+
+
 def main() -> int:
-    mosaic = build_mosaic()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="rebuild the mosaic and re-run convert_geotiff even when the "
+        "existing output already matches this script's format",
+    )
+    args = parser.parse_args()
+
+    index = OUT_DIR / "index"
+    if not args.force and index_matches_mosaic(index, MOSAIC):
+        print(f"reusing existing {index} + tiles in {OUT_DIR} (format matches; --force rebuilds)")
+        ensure_geog_symlink()
+        print("---- index ----")
+        print(index.read_text())
+        return 0
+
+    if args.force or not MOSAIC.exists():
+        mosaic = build_mosaic()
+    else:
+        print(f"reusing existing mosaic {MOSAIC} (regenerating only the geog tiles)")
+        mosaic = MOSAIC
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         [
@@ -139,16 +207,10 @@ def main() -> int:
         cwd=OUT_DIR,
         check=True,
     )
-    index = OUT_DIR / "index"
     if not index.exists():
         raise SystemExit("convert_geotiff did not write an index file")
     patch_index(index, mosaic)
-    # WPS resolves rel_path entries under geog_data_path (= /wrf/geog/WPS_GEOG),
-    # while the converted tiles live at /wrf/geog/usgs_1s per the plan — a
-    # symlink gives WPS the layout it needs without duplicating the tiles.
-    link = ROOT / "geog" / "WPS_GEOG" / "usgs_1s"
-    if not link.exists():
-        link.symlink_to(OUT_DIR)
+    ensure_geog_symlink()
     n_tiles = len([p for p in OUT_DIR.iterdir() if p.name[0].isdigit()])
     print(f"usgs_1s: index + {n_tiles} tiles written to {OUT_DIR}")
     print("---- index ----")

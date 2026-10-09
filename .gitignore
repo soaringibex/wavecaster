@@ -1,6 +1,7 @@
 # WRF pipeline — large or secret, never committed
 wrf/geog/
 wrf/out/
+wrf/static/
 wrf/.env
 wrf/docker/src/
 

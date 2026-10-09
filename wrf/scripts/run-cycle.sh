@@ -16,6 +16,35 @@ WRF_DIR="$ROOT/wrf"
 IMAGE="mtw-wrf:4.6.1"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
 
+# Container engine: docker when its daemon is reachable (the MacBook), else
+# podman (rootless on the Linux server). A docker CLI without a running
+# daemon — as observed on this host — must not shadow the working podman.
+# Podman needs the invoking user's UID preserved so outputs land user-owned,
+# a larger /dev/shm for OpenMPI's shared-memory transport at 16 ranks (the
+# default 64 MB is too small), and — only under enforcing SELinux — a private
+# label on the bind mounts.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  ENGINE=docker
+  RUNTIME_FLAGS=""
+  MOUNT_SUFFIX=""
+elif command -v podman >/dev/null 2>&1; then
+  ENGINE=podman
+  RUNTIME_FLAGS="--userns=keep-id --shm-size=2g"
+  MOUNT_SUFFIX=""
+  if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled 2>/dev/null; then
+    MOUNT_SUFFIX=":Z"
+  fi
+else
+  echo "refusing to start: neither docker nor podman found" >&2
+  exit 2
+fi
+
+# The host-side TypeScript scripts (.mts) run under the tsx devDependency when
+# installed (this server's Node build has no native type stripping); bare node
+# is the fallback — current Node ≥ 24 strips types itself.
+TSX_RUN="node"
+[ -x "$ROOT/node_modules/.bin/tsx" ] && TSX_RUN="$ROOT/node_modules/.bin/tsx"
+
 # Sleep-proofing: every entry point (terminal, launchd, cron) runs the cycle
 # under caffeinate when the host has it (macOS); a Linux server never sleeps.
 if [ -z "${WRF_CAFFEINATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
@@ -115,14 +144,18 @@ log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"; }
 STEP="startup"
 STEP_LOG="$CYCLE_DIR/logs/startup.log"
 
-step() { # name, container command
+step() { # name, container command — WRF_NP is forwarded (default 10 = the
+         # MacBook's performance-core count; the server exports WRF_NP=16)
+         # and cycle-steps.sh reads it for its mpirun lines.
   STEP="$1"
   shift
   STEP_LOG="$CYCLE_DIR/logs/${STEP}.log"
   echo "===== $STEP ====="
-  local rc=0
-  docker run --rm -v "$WRF_DIR:/wrf" -w "/wrf/out/$CYCLE_ID" "$IMAGE" bash -lc "$*" >>"$STEP_LOG" 2>&1 || rc=$?
-  log "$STEP rc=$rc"
+  local rc=0 t0
+  t0=$(date +%s)
+  # shellcheck disable=SC2086
+  $ENGINE run --rm $RUNTIME_FLAGS -e WRF_NP="${WRF_NP:-10}" -v "$WRF_DIR:/wrf$MOUNT_SUFFIX" -w "/wrf/out/$CYCLE_ID" "$IMAGE" bash -lc "$*" >>"$STEP_LOG" 2>&1 || rc=$?
+  log "$STEP rc=$rc in $(( $(date +%s) - t0 ))s"
   return $rc
 }
 
@@ -131,9 +164,10 @@ host_step() { # name, host command
   shift
   STEP_LOG="$CYCLE_DIR/logs/${STEP}.log"
   echo "===== $STEP ====="
-  local rc=0
+  local rc=0 t0
+  t0=$(date +%s)
   bash -c "$*" >>"$STEP_LOG" 2>&1 || rc=$?
-  log "$STEP rc=$rc"
+  log "$STEP rc=$rc in $(( $(date +%s) - t0 ))s"
   return $rc
 }
 
@@ -163,7 +197,7 @@ payload = {
 Path(cycle_dir, "run.json").write_text(json.dumps(payload, indent=2) + "\n")
 PY
   if [ "$NO_PUBLISH" -eq 0 ] && publish_available; then
-    node "$WRF_DIR/scripts/publish.mts" "$CYCLE_DIR" --only run.json || echo "publishing the failure stamp failed"
+    "$TSX_RUN" "$WRF_DIR/scripts/publish.mts" "$CYCLE_DIR" --only run.json || echo "publishing the failure stamp failed"
   else
     echo "publish skipped (no token or --no-publish)"
   fi
@@ -189,8 +223,12 @@ else
   log "fetch skipped (--skip-fetch)"
 fi
 
+# geogrid is off the cycle's critical path: it runs once into wrf/static
+# (hash-keyed on the domain blocks + GEOGRID.TBL) and prepare links the pair
+# into the cycle directory.
+step static-geogrid "bash /wrf/scripts/cycle-steps.sh static-geogrid" || fail
 step prepare "bash /wrf/scripts/cycle-steps.sh prepare $START_ISO $END_ISO $SY $SM $SD $SH $EY $EM $ED $EH $HOURS" || fail
-host_step export-grid "node '$WRF_DIR/scripts/export-grid.mts' --out '$CYCLE_DIR/grid.json'" || fail
+host_step export-grid "'$TSX_RUN' '$WRF_DIR/scripts/export-grid.mts' --out '$CYCLE_DIR/grid.json'" || fail
 
 CS=0
 while [ "$CS" -le "$HOURS" ]; do
@@ -211,7 +249,7 @@ WALL_SECONDS=$(( $(date +%s) - T0 ))
 step postprocess "bash /wrf/scripts/cycle-steps.sh postprocess $CYCLE_ID $WALL_SECONDS" || fail
 
 if [ "$NO_PUBLISH" -eq 0 ] && publish_available; then
-  host_step publish "node '$WRF_DIR/scripts/publish.mts' '$CYCLE_DIR'" || fail
+  host_step publish "'$TSX_RUN' '$WRF_DIR/scripts/publish.mts' '$CYCLE_DIR'" || fail
 else
   log "publish skipped (no token or --no-publish)"
 fi
