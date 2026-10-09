@@ -2,19 +2,25 @@
 # ---------------------------------------------------------------------------
 # WRF-ARW v4.6.1 + WPS v4.6.0 — Mt Washington wave pipeline image.
 #
-# Build (native arm64):  docker build --platform linux/arm64 -t mtw-wrf:4.6.1 .
+# Build (native arch):   wrf/docker/build.sh   (docker, or rootless podman)
 #
 # Pins (SHA-256 verified below; recorded in wrf/README.md):
 #   ubuntu:24.04            digest 534baea6…530eb55 (multi-arch index)
 #   WRF v4.6.1              b8ec11b2…c50b5f2
 #   WPS v4.6.0 tag archive  ca7bbfc6…eb9a309b
 #   Jasper 2.0.33           28d28290…a611801a
-#   micromamba 2.9.0        9f93b974…b74cb7a7
+#   micromamba 2.9.0        aarch64 9f93b974…b74cb7a7 / x86_64 366cd9cd…c3fafb3e3
 #   convert_geotiff         commit da7003fe… (cloned into the build context)
 #
-# The same Dockerfile builds linux/amd64 (no emulation is used on this box).
+# The same Dockerfile builds linux/arm64 and linux/amd64 (no emulation).
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+
+# TARGETARCH is set by BuildKit/podman (arm64/amd64); uname -m covers builders
+# that do not provide it (aarch64/x86_64). BUILD_JOBS overrides the compiler
+# parallelism (build.sh passes the host's physical core count).
+ARG TARGETARCH
+ARG BUILD_JOBS=8
 
 # pipefail matters for the compile steps below
 SHELL ["/bin/bash", "-c"]
@@ -41,7 +47,7 @@ RUN echo "28d28290cc2eaf70c8756d391ed8bcc8ab809a895b9a67ea6e89da23a611801a  /tmp
  && cmake -S /opt/jasper-2.0.33 -B /opt/jasper-build \
       -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/opt/jasper \
       -DJAS_ENABLE_DOC=OFF -DJAS_ENABLE_PROGRAMS=OFF \
- && cmake --build /opt/jasper-build -j 8 \
+ && cmake --build /opt/jasper-build -j "${BUILD_JOBS}" \
  && cmake --install /opt/jasper-build
 
 ENV JASPERLIB=/opt/jasper/lib JASPERINC=/opt/jasper/include
@@ -54,23 +60,26 @@ RUN echo "b8ec11b240a3cf1274b2bd609700191c6ec84628e4c991d3ab562ce9dc50b5f2  /tmp
  && mv /opt/WRFV4.6.1 /opt/WRF \
  && rm /tmp/WRF-4.6.1.tar.gz
 
-# The WRF configure menu is filtered by `uname -m`, so the GNU dmpar entry has
-# a different number per arch — read off WRF's own menus: 7 on aarch64
-# ("Linux armv7l aarch64, gnu OpenMPI"), 34 on x86_64 ("Linux x86_64, gnu
-# compiler (dmpar)"). Nesting = 1 (basic). GNU 13 on arm64 needs
+# The WRF configure menu is arch-filtered, so the GNU dmpar entry has a
+# different number per arch. Re-derived from WRF 4.6.1's own interactive menu
+# and the arch/configure.defaults entry count: arm64 -> 7 ("Linux armv7l
+# aarch64, gnu OpenMPI", dmpar), amd64 -> 34 ("Linux x86_64, gnu
+# compiler (dmpar)"). Nesting = 1 (basic). GNU 13 needs
 # -fallow-argument-mismatch and -fallow-invalid-boz appended to the Fortran
-# base options (unused on x86_64, harmless there).
+# base options (WRF 4.6.1 already carries them via FCCOMPAT on some entries;
+# an exact-string append is idempotent enough — duplicates are harmless).
 RUN set -o pipefail \
  && cd /opt/WRF && export NETCDF=/usr \
- && case "$(uname -m)" in \
-      aarch64) WRF_CONFIG=7 ;; \
-      x86_64)  WRF_CONFIG=34 ;; \
-      *) echo "unsupported build arch: $(uname -m)" >&2; exit 1 ;; \
+ && WRF_ARCH="${TARGETARCH:-$(uname -m)}" \
+ && case "$WRF_ARCH" in \
+      arm64|aarch64) WRF_CONFIG=7 ;; \
+      amd64|x86_64)  WRF_CONFIG=34 ;; \
+      *) echo "unsupported build arch: $WRF_ARCH" >&2; exit 1 ;; \
     esac \
  && printf '%s\n1\n' "$WRF_CONFIG" | timeout 180 ./configure \
  && sed -i 's/^\(FCBASEOPTS_NO_G[[:space:]]*=.*\)$/\1 -fallow-argument-mismatch -fallow-invalid-boz/' configure.wrf \
  && grep -n "fallow-argument-mismatch" configure.wrf \
- && ./compile -j 8 em_real 2>&1 | tee /opt/WRF/compile.log | tail -40 \
+ && ./compile -j "${BUILD_JOBS}" em_real 2>&1 | tee /opt/WRF/compile.log | tail -40 \
  && test -s main/wrf.exe && test -s main/real.exe && test -s main/ndown.exe \
  && ls -l main/wrf.exe main/real.exe main/ndown.exe
 
@@ -108,17 +117,24 @@ RUN cd /opt/convert_geotiff \
  && touch -d "2020-01-01" configure.ac Makefile.am \
  && touch -d "2021-01-01" aclocal.m4 configure Makefile.in config.h.in \
  && ./configure \
- && make -j 8 \
+ && make -j "${BUILD_JOBS}" \
  && test -x convert_geotiff
 
 # ------------------------------------ Python 3.12 layer (conda-forge binaries)
 # wrf-python has no pip sdist that builds on Python 3.12; conda-forge ships
 # platform binaries (1.4.2 — same API: destagger, to_np, interplevel). The
-# micromamba 2.9.0 binary in src/ matches the build host — aarch64 on the
+# micromamba 2.9.0 binary in src/ matches the target arch — aarch64 on the
 # MacBook, x86_64 on a Linux server (same release asset, renamed); this picks
-# whichever is present. Everything else is the same pinned stack.
+# whichever is present and SHA-verifies it. Everything else is the same pinned
+# stack.
 COPY src/micromamba-2.9.0-linux-* /tmp/micromamba/
-RUN MAMBA_ARCH=$( [ "$(uname -m)" = "aarch64" ] && echo aarch64 || echo x86_64 ) \
+RUN MAMBA_TARGET="${TARGETARCH:-$(uname -m)}" \
+ && case "$MAMBA_TARGET" in \
+      arm64|aarch64) MAMBA_ARCH=aarch64; MAMBA_SHA=9f93b974adcb4d166996af969b6cd371287d1a3e52733704727884d9b74cb7a7 ;; \
+      amd64|x86_64)  MAMBA_ARCH=x86_64;  MAMBA_SHA=366cd9cd8be14df1ab8ed50352a82111082a36686b2d389fdb79a92c3fafb3e3 ;; \
+      *) echo "unsupported build arch: $MAMBA_TARGET" >&2; exit 1 ;; \
+    esac \
+ && echo "$MAMBA_SHA  /tmp/micromamba/micromamba-2.9.0-linux-${MAMBA_ARCH}" | sha256sum -c - \
  && mv "/tmp/micromamba/micromamba-2.9.0-linux-${MAMBA_ARCH}" /usr/local/bin/micromamba \
  && rm -rf /tmp/micromamba \
  && chmod +x /usr/local/bin/micromamba && /usr/local/bin/micromamba --version \
