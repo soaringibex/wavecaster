@@ -2,6 +2,7 @@
 # Container-side cycle phases for the WRF wave pipeline. Invoked by
 # run-cycle.sh with the cycle directory as the working directory.
 #
+#   cycle-steps.sh static-geogrid
 #   cycle-steps.sh prepare      START_ISO END_ISO SY SM SD SH EY EM ED EH HOURS
 #   cycle-steps.sh chunk        YYYYMMDD HH CS CE CHUNK_START_ISO CHUNK_END_ISO
 #   cycle-steps.sh real         START_ISO HOURS
@@ -79,6 +80,14 @@ prepare)
   ln -sf /opt/WPS/metgrid/src/metgrid.exe .
   ln -sf /opt/WRF/main/real.exe .
   ln -sf /opt/WRF/main/wrf.exe .
+  # Static domain: metgrid reads the geo_em pair built once in /wrf/static.
+  for d in 01 02; do
+    [ -s "/wrf/static/geo_em.d$d.nc" ] || {
+      echo "missing /wrf/static/geo_em.d$d.nc — the static-geogrid step has not run"
+      exit 1
+    }
+    ln -sf "/wrf/static/geo_em.d$d.nc" "geo_em.d$d.nc"
+  done
   # WRF reads its runtime physics tables and RRTMG inputs from the run
   # directory; a custom run directory has none of WRF's run/ files.
   for f in LANDUSE.TBL SOILPARM.TBL VEGPARM.TBL GENPARM.TBL URBPARM.TBL URBPARM_LCZ.TBL RRTMG_LW_DATA RRTMG_SW_DATA CAMtr_volume_mixing_ratio ozone.formatted ozone_lat.formatted ozone_plev.formatted; do
@@ -100,6 +109,35 @@ prepare)
   log "prepared: window $START_ISO .. $END_ISO, run_hours=$HOURS"
   grep -E "start_date|end_date" namelist.wps | head -2
   grep -E "run_hours|p_top_requested" namelist.input
+  ;;
+
+static-geogrid)
+  # The domain and terrain never change between cycles, so geogrid runs once
+  # into /wrf/static (gitignored) and every cycle links the two geo_em files
+  # from there (see prepare). The cache key is a hash of the namelist.wps
+  # domain blocks plus GEOGRID.TBL: change either and the next cycle rebuilds.
+  STATIC=/wrf/static
+  mkdir -p "$STATIC/geogrid" "$STATIC/logs"
+  cd "$STATIC"
+  cp -f /wrf/wps/namelist.wps namelist.wps
+  cp -f /wrf/wps/GEOGRID.TBL geogrid/GEOGRID.TBL
+  ln -sf /opt/WPS/geogrid/src/geogrid.exe .
+  hash=$( { sed -n '/^&share/,/^\//p; /^&geogrid/,/^\//p' namelist.wps; cat geogrid/GEOGRID.TBL; } | sha256sum | cut -d' ' -f1 )
+  if [ -s geo_em.d01.nc ] && [ -s geo_em.d02.nc ] && [ -f build-hash ] && [ "$(cat build-hash)" = "$hash" ]; then
+    echo "static geo_em is current (hash $hash) — skipping geogrid"
+    echo "  --- terrain gate ---"
+    python /wrf/scripts/check-geogrid.py . || exit 1
+    exit 0
+  fi
+  echo "static geo_em missing or stale (want hash $hash) — running geogrid"
+  t0=$(date +%s)
+  ./geogrid.exe > logs/geogrid-run.log 2>&1 || { tail -8 logs/geogrid-run.log; exit 1; }
+  grep -q "Successful completion" logs/geogrid-run.log || { tail -8 logs/geogrid-run.log; exit 1; }
+  log "geogrid: $(( $(date +%s) - t0 ))s for both domains"
+  ls -l geo_em.d0*.nc
+  echo "  --- terrain gate ---"
+  python /wrf/scripts/check-geogrid.py . || exit 1
+  echo "$hash" > build-hash
   ;;
 
 chunk)
@@ -130,27 +168,33 @@ chunk)
   [ "$n" -eq "$EXPECT" ] || exit 1
   cp -f /wrf/wps/Vtable.NAT.trimmed Vtable
   sed -i "s/^ prefix = .*/ prefix = 'NAT',/" namelist.wps
+  t0=$(date +%s)
   ./ungrib.exe > "logs/ungrib-nat-$CS-$CE.log" 2>&1 || { tail -8 "logs/ungrib-nat-$CS-$CE.log"; exit 1; }
   [ "$(ls NAT:* 2>/dev/null | wc -l)" -eq "$EXPECT" ] || {
     echo "ungrib NAT wrote $(ls NAT:* 2>/dev/null | wc -l) intermediate files, expected $EXPECT"
     tail -8 "logs/ungrib-nat-$CS-$CE.log"
     exit 1
   }
+  log "ungrib NAT: $(( $(date +%s) - t0 ))s for $EXPECT times"
 
   n=$(link_range "hrrr.t${HH}z.soilf*.grib2" "$CS" "$CE")
   log "chunk $CS..$CE: linked $n SOIL files (expect $EXPECT)"
   [ "$n" -eq "$EXPECT" ] || exit 1
   cp -f /wrf/wps/Vtable.HRRR.wrfprs Vtable
   sed -i "s/^ prefix = .*/ prefix = 'SOIL',/" namelist.wps
+  t0=$(date +%s)
   ./ungrib.exe > "logs/ungrib-soil-$CS-$CE.log" 2>&1 || { tail -8 "logs/ungrib-soil-$CS-$CE.log"; exit 1; }
   [ "$(ls SOIL:* 2>/dev/null | wc -l)" -eq "$EXPECT" ] || {
     echo "ungrib SOIL wrote $(ls SOIL:* 2>/dev/null | wc -l) intermediate files, expected $EXPECT"
     tail -8 "logs/ungrib-soil-$CS-$CE.log"
     exit 1
   }
+  log "ungrib SOIL: $(( $(date +%s) - t0 ))s for $EXPECT times"
 
+  t0=$(date +%s)
   ./metgrid.exe > "logs/metgrid-$CS-$CE.log" 2>&1 || { tail -8 "logs/metgrid-$CS-$CE.log"; exit 1; }
   grep -q "Successful completion" "logs/metgrid-$CS-$CE.log" || { tail -8 "logs/metgrid-$CS-$CE.log"; exit 1; }
+  log "metgrid: $(( $(date +%s) - t0 ))s for $EXPECT times"
   chunk_done "$CS" "$CE" "$CSTART" || { echo "chunk $CS..$CE incomplete after metgrid"; exit 1; }
   log "chunk $CS..$CE: met_em complete ($(ls met_em.d01.* 2>/dev/null | wc -l) times so far)"
   python /wrf/scripts/check-met-em.py . --times "$(ls met_em.d01.* 2>/dev/null | wc -l)" || exit 1
@@ -176,8 +220,12 @@ print(ds.sizes['num_metgrid_levels'], int(ds.attrs['NUM_METGRID_SOIL_LEVELS']))
   sed -i "s/num_metgrid_soil_levels = .*/num_metgrid_soil_levels = $NSOIL,/" namelist.input
   grep -E "p_top_requested|num_metgrid|run_hours" namelist.input
   rm -f rsl.*
+  # OpenMPI 4.1 binds to nothing by default (observed "rank N is not bound"
+  # in --report-bindings on the 9950X); --map-by core --bind-to core pins
+  # one rank per physical core (16 ranks -> cores 0..15, no SMT siblings
+  # shared between ranks).
   t0=$(date +%s)
-  mpirun -np "${WRF_NP:-10}" ./real.exe > logs/real.log 2>&1
+  mpirun --map-by core --bind-to core -np "${WRF_NP:-10}" ./real.exe > logs/real.log 2>&1
   rc=$?
   log "real rc=$rc in $(( $(date +%s) - t0 ))s"
   grep -m2 "Assume RUC LSM" rsl.error.0000 2>/dev/null || echo "  (no 'Assume RUC LSM' line found!)"
@@ -201,7 +249,7 @@ wrf)
   fi
   rm -f rsl.*
   t0=$(date +%s)
-  mpirun -np "${WRF_NP:-10}" ./wrf.exe > logs/wrf.log 2>&1
+  mpirun --map-by core --bind-to core -np "${WRF_NP:-10}" ./wrf.exe > logs/wrf.log 2>&1
   rc=$?
   wall=$(( $(date +%s) - t0 ))
   log "wrf rc=$rc, wall ${wall}s for ${HOURS} h ($(awk -v w="$wall" -v h="$HOURS" 'BEGIN{printf "%.1f", w/h}') s per forecast hour)"
